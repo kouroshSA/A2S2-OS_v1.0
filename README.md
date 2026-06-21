@@ -70,6 +70,51 @@ one-line `task_cmd()` in `apps/bench_console/app.py`.
 
 ---
 
+## Running on macOS (standalone shell)
+
+The **live** server (`server.py` driving the twin) belongs on the WSL/Linux
+machine that runs the simulation — MuJoCo, `run_task.py`, and the `xarm6sim`
+conda env all live there. But the **standalone shell** (the *demo bench* — the
+full console with simulated runs) runs on macOS with **no code changes**:
+
+```bash
+# Easiest: double-click  open-demo-macos.command  in Finder.
+# Or, equivalently, from a terminal in this folder:
+open index.html
+```
+
+`index.html` is a single self-contained file (inline CSS + vanilla JS), so any
+modern browser renders it; opening it directly puts the console in demo mode
+(amber "Demo bench" banner, simulated runs, never presented as real).
+
+**Apple Silicon (ARM) vs Intel:** both run it identically. Nothing in the shell
+is compiled or architecture-specific — it is HTML/CSS/JS in a browser, and
+`server.py` (if you run it) is pure-stdlib Python 3, which CPython provides on
+both architectures. The only place CPU architecture would matter is the *twin
+itself* (MuJoCo), which is not part of this repo and is not needed for the
+standalone shell.
+
+Optional — serve it locally on the Mac instead of `file://` (still demo, since
+the twin isn't present), e.g. to preview kiosk mode:
+
+```bash
+python3 server.py          # needs Python 3 (preinstalled on macOS / `brew install python`)
+# then open http://localhost:8770
+```
+
+macOS kiosk (full-screen, no browser chrome) with Chrome:
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --kiosk --app=http://localhost:8770       # or --app=file://$PWD/index.html for pure demo
+```
+
+To actually drive the real arm from a Mac you would need to port the twin
+(MuJoCo + `run_task.py` + its env) onto that Mac; the OS bridge here is already
+cross-platform and would serve it unchanged.
+
+---
+
 ## Endpoints
 
 | Method | Path | Returns |
