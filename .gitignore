@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+*:com.dropbox.attrs
+*:Zone.Identifier

@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Lab OS — A2S2 Bench Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bench:#0E1614;      /* anodized charcoal-green casing */
+    --bench-2:#0A100F;
+    --panel:#15211E;      /* raised panel */
+    --panel-2:#1B2A26;
+    --line:#243430;       /* hairline */
+    --line-2:#2E423C;
+    --text:#E8F0ED;
+    --muted:#7E938C;
+    --muted-2:#566962;
+    --red:#E5484D;        /* scene object coding */
+    --green:#46C26A;
+    --blue:#4C8DFF;
+    --go:#F2B23E;         /* the one bold spend: primary action */
+    --go-ink:#1A1305;
+    --ok:#46C26A; --warn:#F2B23E; --err:#E5484D;
+    --r:14px;
+    font-synthesis:none;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:
+      radial-gradient(1200px 700px at 80% -10%, #16241f 0%, transparent 60%),
+      var(--bench);
+    color:var(--text);
+    font-family:"Inter",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+    user-select:none;
+  }
+  .app{height:100vh;display:flex;flex-direction:column}
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    display:flex;align-items:center;gap:18px;
+    padding:14px 22px;border-bottom:1px solid var(--line);
+    background:linear-gradient(var(--bench-2),transparent);
+  }
+  .brand{display:flex;align-items:center;gap:12px;cursor:pointer}
+  .mark{width:30px;height:30px;border-radius:8px;background:
+      conic-gradient(from 210deg, var(--green), var(--blue) 40%, var(--red) 75%, var(--green));
+      box-shadow:inset 0 0 0 4px var(--bench);position:relative}
+  .mark::after{content:"";position:absolute;inset:9px;border-radius:3px;background:var(--bench)}
+  .brand h1{font-family:"Space Grotesk";font-size:15px;font-weight:600;letter-spacing:.04em}
+  .brand small{display:block;font-size:11px;color:var(--muted);font-weight:500;letter-spacing:.12em;text-transform:uppercase}
+  .top-spacer{flex:1}
+  .conn{display:flex;align-items:center;gap:8px;font-family:"IBM Plex Mono";font-size:12px;
+    padding:6px 11px;border:1px solid var(--line);border-radius:999px;color:var(--muted)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--muted-2)}
+  .conn.live .dot{background:var(--ok);box-shadow:0 0 10px var(--ok)}
+  .conn.demo .dot{background:var(--warn);box-shadow:0 0 10px var(--warn)}
+  .clock{font-family:"IBM Plex Mono";font-size:13px;color:var(--muted);min-width:58px;text-align:right}
+
+  /* ---------- bench status strip (signature) ---------- */
+  .strip{padding:12px 22px;border-bottom:1px solid var(--line);background:var(--bench-2)}
+  .strip-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .strip-head .label{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:.16em;color:var(--muted);text-transform:uppercase}
+  .strip-head .state{font-family:"IBM Plex Mono";font-size:12px;color:var(--muted)}
+  .strip-head .state b{color:var(--text);font-weight:600}
+  svg.bench{width:100%;height:96px;display:block}
+
+  /* ---------- body ---------- */
+  .body{flex:1;overflow:hidden;display:flex}
+  .home{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:18px;padding:22px}
+  .tile{
+    position:relative;border:1px solid var(--line);border-radius:var(--r);
+    background:linear-gradient(160deg,var(--panel),var(--bench));
+    padding:26px 28px;cursor:pointer;overflow:hidden;
+    display:flex;flex-direction:column;justify-content:space-between;
+    transition:border-color .15s, transform .1s;
+  }
+  .tile:hover{border-color:var(--line-2)}
+  .tile:active{transform:translateY(1px)}
+  .tile .ico{width:46px;height:46px;border-radius:11px;display:grid;place-items:center;
+    border:1px solid var(--line-2);background:var(--bench-2)}
+  .tile h2{font-family:"Space Grotesk";font-size:24px;font-weight:600;margin-top:auto;letter-spacing:.01em}
+  .tile p{color:var(--muted);font-size:14px;margin-top:6px;line-height:1.45;max-width:34ch}
+  .tile .accent{position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;
+    opacity:.10;filter:blur(6px)}
+  .tile.ask .accent{background:var(--go)}
+  .tile.proto .accent{background:var(--green)}
+  .tile.watch .accent{background:var(--blue)}
+  .tile.samples .accent{background:var(--red)}
+  .tile .badge{position:absolute;top:18px;right:18px;font-family:"IBM Plex Mono";font-size:12px;
+    color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:3px 9px}
+
+  /* ---------- drilled view ---------- */
+  .view{flex:1;display:flex;flex-direction:column;overflow:hidden}
+  .view-head{display:flex;align-items:center;gap:14px;padding:18px 22px;border-bottom:1px solid var(--line)}
+  .back{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--panel);
+    color:var(--text);cursor:pointer;display:grid;place-items:center;font-size:18px}
+  .back:hover{border-color:var(--line-2)}
+  .view-head h2{font-family:"Space Grotesk";font-size:20px;font-weight:600}
+  .view-head .sub{color:var(--muted);font-size:13px;margin-left:2px}
+  .view-body{flex:1;overflow:auto;padding:22px}
+
+  /* ask */
+  .ask-wrap{max-width:760px;margin:0 auto}
+  .ask-box{border:1px solid var(--line);border-radius:var(--r);background:var(--panel);padding:18px}
+  textarea#task{width:100%;min-height:96px;resize:none;background:transparent;border:none;outline:none;
+    color:var(--text);font-family:"Inter";font-size:18px;line-height:1.5}
+  textarea#task::placeholder{color:var(--muted-2)}
+  .ask-row{display:flex;align-items:center;justify-content:space-between;margin-top:14px;gap:12px}
+  .model-pick{display:flex;gap:6px}
+  .chip{font-family:"IBM Plex Mono";font-size:12px;color:var(--muted);border:1px solid var(--line);
+    background:var(--bench-2);border-radius:999px;padding:6px 12px;cursor:pointer}
+  .chip.on{color:var(--go);border-color:var(--go)}
+  .go{font-family:"Space Grotesk";font-weight:600;font-size:15px;letter-spacing:.02em;
+    background:var(--go);color:var(--go-ink);border:none;border-radius:11px;padding:12px 22px;cursor:pointer;
+    display:flex;align-items:center;gap:9px}
+  .go:disabled{opacity:.45;cursor:not-allowed}
+  .go:hover:not(:disabled){filter:brightness(1.06)}
+  .suggest{margin-top:22px}
+  .suggest .label{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  .sug-list{display:flex;flex-wrap:wrap;gap:9px}
+  .sug{font-size:14px;color:var(--text);border:1px solid var(--line);background:var(--panel);
+    border-radius:999px;padding:9px 15px;cursor:pointer}
+  .sug:hover{border-color:var(--line-2)}
+
+  /* protocol library */
+  .lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;max-width:980px;margin:0 auto}
+  .card{border:1px solid var(--line);border-radius:var(--r);background:var(--panel);padding:18px;cursor:pointer;
+    display:flex;flex-direction:column;gap:10px;transition:border-color .15s}
+  .card:hover{border-color:var(--line-2)}
+  .card .swatch{width:100%;height:6px;border-radius:99px;background:var(--line-2)}
+  .card.red .swatch{background:var(--red)} .card.green .swatch{background:var(--green)}
+  .card.blue .swatch{background:var(--blue)} .card.amber .swatch{background:var(--go)}
+  .card h3{font-family:"Space Grotesk";font-size:17px;font-weight:600}
+  .card p{color:var(--muted);font-size:13.5px;line-height:1.5}
+  .card .run-tag{font-family:"IBM Plex Mono";font-size:12px;color:var(--muted);margin-top:auto}
+
+  /* watch */
+  .watch{display:grid;grid-template-columns:1.3fr 1fr;gap:18px;height:100%}
+  .cam{border:1px solid var(--line);border-radius:var(--r);background:
+      repeating-linear-gradient(45deg,#0c1311 0 12px,#0a100e 12px 24px);
+      display:flex;flex-direction:column;overflow:hidden}
+  .cam .cam-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);
+    font-family:"IBM Plex Mono";font-size:12px;color:var(--muted);background:var(--bench-2)}
+  .cam .cam-bar .rec{width:9px;height:9px;border-radius:50%;background:var(--red);box-shadow:0 0 8px var(--red)}
+  .cam .cam-body{flex:1;display:grid;place-items:center;text-align:center;color:var(--muted-2);padding:24px}
+  .cam .cam-body .big{font-family:"Space Grotesk";font-size:16px;color:var(--muted);margin-bottom:6px}
+  .readout{border:1px solid var(--line);border-radius:var(--r);background:var(--bench-2);display:flex;flex-direction:column;overflow:hidden}
+  .readout .r-bar{padding:10px 14px;border-bottom:1px solid var(--line);font-family:"IBM Plex Mono";
+    font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between}
+  .log{flex:1;overflow:auto;padding:12px 14px;font-family:"IBM Plex Mono";font-size:12.5px;line-height:1.65;color:#bcd}
+  .log .l-plan{color:var(--go)} .log .l-ok{color:var(--ok)} .log .l-err{color:var(--err)} .log .l-dim{color:var(--muted-2)}
+  .queue{margin-top:0}
+  .q-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--panel)}
+  .q-item .q-dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .q-running{background:var(--go);box-shadow:0 0 8px var(--go);animation:pulse 1.1s infinite}
+  .q-done{background:var(--ok)} .q-err{background:var(--err)} .q-queued{background:var(--muted-2)}
+  @keyframes pulse{50%{opacity:.35}}
+  .q-item .q-task{flex:1;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .q-item .q-meta{font-family:"IBM Plex Mono";font-size:11px;color:var(--muted)}
+
+  /* samples */
+  .samples{max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:10px}
+  .s-row{display:grid;grid-template-columns:14px 1fr auto auto;align-items:center;gap:14px;
+    border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:14px 16px;cursor:pointer}
+  .s-row:hover{border-color:var(--line-2)}
+  .s-row .s-out{width:10px;height:10px;border-radius:50%}
+  .s-row h4{font-size:14.5px;font-weight:500}
+  .s-row .s-files{font-family:"IBM Plex Mono";font-size:11px;color:var(--muted-2);margin-top:3px}
+  .s-row .s-model{font-family:"IBM Plex Mono";font-size:12px;color:var(--muted);border:1px solid var(--line);padding:3px 9px;border-radius:999px}
+  .s-row .s-time{font-family:"IBM Plex Mono";font-size:12px;color:var(--muted);min-width:120px;text-align:right}
+
+  .empty{display:grid;place-items:center;height:100%;text-align:center;color:var(--muted)}
+  .empty .e-card{max-width:380px}
+  .empty h3{font-family:"Space Grotesk";font-size:18px;color:var(--text);margin-bottom:8px}
+  .empty p{font-size:14px;line-height:1.6}
+  .empty .go{margin:18px auto 0;display:inline-flex}
+
+  .demo-banner{background:rgba(242,178,62,.10);border-bottom:1px solid rgba(242,178,62,.3);
+    color:var(--go);font-family:"IBM Plex Mono";font-size:12px;padding:7px 22px;text-align:center;letter-spacing:.03em}
+
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:99px;border:3px solid var(--bench)}
+  *:focus-visible{outline:2px solid var(--go);outline-offset:2px}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="demoBanner" class="demo-banner" style="display:none">
+    Demo bench — simulated runs. Start <code>server.py</code> on the lab machine to drive the live digital twin.
+  </div>
+
+  <div class="topbar">
+    <div class="brand" onclick="go('home')">
+      <div class="mark"></div>
+      <div><h1>Lab OS</h1><small>A2S2 Bench Console</small></div>
+    </div>
+    <div class="top-spacer"></div>
+    <div id="conn" class="conn demo"><span class="dot"></span><span id="connText">Demo bench</span></div>
+    <div id="clock" class="clock">--:--</div>
+  </div>
+
+  <!-- signature: live bench status strip -->
+  <div class="strip">
+    <div class="strip-head">
+      <span class="label">Bench layout · live state</span>
+      <span class="state">arm <b id="armState">idle</b> · rail <b id="railState">0 mm</b></span>
+    </div>
+    <svg class="bench" id="benchSvg" viewBox="0 0 760 96" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+
+  <div class="body" id="body"></div>
+</div>
+
+<script>
+/* ============================================================
+   Lab OS bench console — single-file kiosk shell.
+   Talks to server.py when present (live mode); otherwise runs
+   a clearly-labelled demo bench so the console is feelable alone.
+============================================================ */
+
+const SCENE = {
+  cubes: [ {id:'red_cube',color:'red'}, {id:'green_cube',color:'green'}, {id:'blue_cube',color:'blue'} ],
+  bins:  [ {id:'red_bin',color:'red'}, {id:'green_bin',color:'green'}, {id:'blue_bin',color:'blue'} ],
+  racks: 2, tubesPerRack: 6
+};
+
+const STATE = {
+  mode:'demo',          // 'live' | 'demo'
+  view:'home',
+  model:'haiku',
+  jobs:[],              // {id, task, status, log[], outcome, model, started}
+  sessions:[],
+  busy:false,
+  arm:'idle', rail:0
+};
+
+/* curated protocol library — built from the scene's own objects */
+const LIBRARY = [
+  {color:'red',   title:'Sort red cube',   task:'Put the red cube in the red bin',     desc:'Pick the red cube and place it in the matching bin.'},
+  {color:'green', title:'Sort green cube', task:'Put the green cube in the green bin',  desc:'Pick the green cube and place it in the matching bin.'},
+  {color:'blue',  title:'Sort blue cube',  task:'Put the blue cube in the blue bin',    desc:'Pick the blue cube and place it in the matching bin.'},
+  {color:'amber', title:'Rack a tube',     task:'Place a Falcon tube into the first rack slot', desc:'Move a Falcon tube into an open slot on the rack.'},
+  {color:'blue',  title:'Clear the bench', task:'Push the blue cube off the front edge of the bench', desc:'Demonstration push primitive — clears an object off the bench.'},
+  {color:'green', title:'Wave',            task:'Wave goodbye',                          desc:'A quick liveness check — the arm waves.'}
+];
+
+/* ---------------- networking (graceful) ---------------- */
+async function api(path, opts={}, timeout=4000){
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), timeout);
+  try{
+    const r = await fetch(path, {...opts, signal:ctrl.signal});
+    clearTimeout(t);
+    if(!r.ok) throw new Error('http '+r.status);
+    return await r.json();
+  }catch(e){ clearTimeout(t); throw e; }
+}
+
+async function boot(){
+  try{
+    const h = await api('/api/health', {}, 2500);
+    STATE.mode = h.ready ? 'live' : 'demo';
+    STATE._health = h;
+  }catch{ STATE.mode='demo'; }
+  setConn();
+  try{ const lib = await api('/api/library'); if(Array.isArray(lib)&&lib.length) LIBRARY.splice(0,LIBRARY.length,...lib);}catch{}
+  await refreshSessions();
+  drawBench();
+  render();
+  tickClock(); setInterval(tickClock, 10000);
+  if(STATE.mode==='live') setInterval(refreshSessions, 8000);
+}
+
+function setConn(){
+  const c = document.getElementById('conn');
+  const live = STATE.mode==='live';
+  c.className = 'conn '+(live?'live':'demo');
+  document.getElementById('connText').textContent = live ? 'Connected to bench' : 'Demo bench';
+  document.getElementById('demoBanner').style.display = live ? 'none':'block';
+}
+
+async function refreshSessions(){
+  if(STATE.mode!=='live') return;
+  try{ STATE.sessions = await api('/api/sessions'); if(STATE.view==='samples') render(); }catch{}
+}
+
+/* ---------------- clock ---------------- */
+function tickClock(){
+  const d=new Date();
+  document.getElementById('clock').textContent =
+    String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+
+/* ---------------- bench schematic (signature) ---------------- */
+function drawBench(highlight){
+  const svg=document.getElementById('benchSvg');
+  const COL={red:'#E5484D',green:'#46C26A',blue:'#4C8DFF'};
+  let s='';
+  // bench surface
+  s+=`<rect x="8" y="20" width="744" height="58" rx="8" fill="#101a17" stroke="#243430"/>`;
+  // rail (left) with arm carriage
+  s+=`<rect x="20" y="30" width="120" height="38" rx="6" fill="#0c1411" stroke="#2E423C"/>`;
+  s+=`<text x="80" y="16" fill="#566962" font-size="9" font-family="IBM Plex Mono" text-anchor="middle">RAIL · ARM</text>`;
+  const carriageX = 30 + (STATE.rail/700)*96;
+  s+=`<rect x="${carriageX}" y="36" width="26" height="26" rx="5" fill="#1B2A26" stroke="${STATE.arm==='idle'?'#2E423C':'#F2B23E'}" stroke-width="${STATE.arm==='idle'?1:2}"/>`;
+  s+=`<circle cx="${carriageX+13}" cy="49" r="5" fill="${STATE.arm==='idle'?'#2E423C':'#F2B23E'}"/>`;
+  // cubes
+  SCENE.cubes.forEach((c,i)=>{
+    const x=200+i*60, hot=highlight&&highlight.includes(c.color);
+    s+=`<rect x="${x}" y="40" width="22" height="22" rx="4" fill="${COL[c.color]}" opacity="${hot?1:.85}"${hot?` stroke="#fff" stroke-width="1.5"`:''}/>`;
+  });
+  s+=`<text x="231" y="16" fill="#566962" font-size="9" font-family="IBM Plex Mono" text-anchor="middle">CUBES</text>`;
+  // bins
+  SCENE.bins.forEach((b,i)=>{
+    const x=400+i*54;
+    s+=`<rect x="${x}" y="38" width="34" height="26" rx="4" fill="none" stroke="${COL[b.color]}" stroke-width="2" opacity=".9"/>`;
+  });
+  s+=`<text x="454" y="16" fill="#566962" font-size="9" font-family="IBM Plex Mono" text-anchor="middle">BINS</text>`;
+  // racks (2 × 4x2 → show as 2 grids of 6 tubes)
+  for(let r=0;r<2;r++){
+    const ox=590+r*78;
+    s+=`<rect x="${ox-4}" y="32" width="64" height="34" rx="5" fill="#0c1411" stroke="#2E423C"/>`;
+    for(let k=0;k<6;k++){
+      const cx=ox+6+(k%3)*18, cy=42+Math.floor(k/3)*14;
+      s+=`<circle cx="${cx}" cy="${cy}" r="4.5" fill="#1B2A26" stroke="#3a554d"/>`;
+    }
+  }
+  s+=`<text x="668" y="16" fill="#566962" font-size="9" font-family="IBM Plex Mono" text-anchor="middle">TUBE RACKS</text>`;
+  svg.innerHTML=s;
+  document.getElementById('armState').textContent=STATE.arm;
+  document.getElementById('railState').textContent=Math.round(STATE.rail)+' mm';
+}
+
+/* ---------------- view router ---------------- */
+function go(view){ STATE.view=view; render(); }
+
+function render(){
+  const body=document.getElementById('body');
+  if(STATE.view==='home') return body.innerHTML=homeView();
+  body.innerHTML = viewShell(STATE.view);
+  if(STATE.view==='ask') wireAsk();
+  if(STATE.view==='watch') renderWatch();
+}
+
+function homeView(){
+  const running = STATE.jobs.filter(j=>j.status==='running').length;
+  const done = STATE.mode==='live'? STATE.sessions.length : STATE.jobs.filter(j=>j.status==='done').length;
+  return `<div class="home">
+    <div class="tile ask" onclick="go('ask')"><div class="accent"></div>
+      <div class="ico">${ICO.ask}</div>
+      <div><h2>Ask the bench</h2><p>Say what you want in plain words — "put the green cube in the green bin." The bench plans it and runs it.</p></div>
+    </div>
+    <div class="tile proto" onclick="go('library')"><div class="accent"></div>
+      <span class="badge">${LIBRARY.length} ready</span>
+      <div class="ico">${ICO.proto}</div>
+      <div><h2>Run a protocol</h2><p>Pick a saved task from the library and press go. No typing needed.</p></div>
+    </div>
+    <div class="tile watch" onclick="go('watch')"><div class="accent"></div>
+      <span class="badge">${running?running+' running':'idle'}</span>
+      <div class="ico">${ICO.watch}</div>
+      <div><h2>Watch</h2><p>See the live bench camera, what's running now, and the queue.</p></div>
+    </div>
+    <div class="tile samples" onclick="go('samples')"><div class="accent"></div>
+      <span class="badge">${done} run${done===1?'':'s'}</span>
+      <div class="ico">${ICO.samples}</div>
+      <div><h2>My samples &amp; results</h2><p>Every run is saved with its plates, tubes and trajectory. Browse and replay.</p></div>
+    </div>
+  </div>`;
+}
+
+const TITLES={ask:['Ask the bench','say it in plain words'],library:['Run a protocol','pick a saved task'],
+  watch:['Watch','live bench &amp; queue'],samples:['My samples & results','saved runs']};
+function viewShell(v){
+  const [t,s]=TITLES[v];
+  return `<div class="view">
+    <div class="view-head">
+      <button class="back" onclick="go('home')" aria-label="Back to home">‹</button>
+      <h2>${t}</h2><span class="sub">${s}</span>
+    </div>
+    <div class="view-body" id="vbody">${{ask:askView,library:libView,watch:watchView,samples:samplesView}[v]()}</div>
+  </div>`;
+}
+
+/* ---- ASK ---- */
+function askView(){
+  return `<div class="ask-wrap">
+    <div class="ask-box">
+      <textarea id="task" placeholder="e.g. Put the green cube in the green bin"></textarea>
+      <div class="ask-row">
+        <div class="model-pick">
+          <span class="chip ${STATE.model==='haiku'?'on':''}" data-m="haiku">haiku · fast</span>
+          <span class="chip ${STATE.model==='sonnet'?'on':''}" data-m="sonnet">sonnet · careful</span>
+        </div>
+        <button class="go" id="runBtn">${ICO.play}<span>Run on the bench</span></button>
+      </div>
+    </div>
+    <div class="suggest">
+      <div class="label">Try one</div>
+      <div class="sug-list">${LIBRARY.slice(0,5).map(l=>`<span class="sug" data-task="${esc(l.task)}">${esc(l.task)}</span>`).join('')}</div>
+    </div>
+  </div>`;
+}
+function wireAsk(){
+  document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{STATE.model=c.dataset.m;render();});
+  document.querySelectorAll('.sug').forEach(s=>s.onclick=()=>{document.getElementById('task').value=s.dataset.task;});
+  document.getElementById('runBtn').onclick=()=>{
+    const t=document.getElementById('task').value.trim();
+    if(t) submit(t);
+  };
+}
+
+/* ---- LIBRARY ---- */
+function libView(){
+  return `<div class="lib">${LIBRARY.map(l=>`
+    <div class="card ${l.color}" data-task="${esc(l.task)}">
+      <div class="swatch"></div>
+      <h3>${esc(l.title)}</h3>
+      <p>${esc(l.desc)}</p>
+      <div class="run-tag">${esc(l.task)}</div>
+    </div>`).join('')}</div>`;
+}
+/* delegate clicks for cards/suggestions after render */
+document.addEventListener('click',e=>{
+  const card=e.target.closest('.card[data-task]');
+  if(card) submit(card.dataset.task);
+});
+
+/* ---- WATCH ---- */
+function watchView(){ return `<div id="watchMount" style="height:100%"></div>`; }
+function renderWatch(){
+  const mount=document.getElementById('watchMount'); if(!mount) return;
+  const active=STATE.jobs.find(j=>j.status==='running')||STATE.jobs[STATE.jobs.length-1];
+  const logHtml = active? active.log.map(fmtLog).join('') :
+    `<span class="l-dim">Bench idle. Ask the bench to do something, or run a protocol.</span>`;
+  mount.innerHTML=`<div class="watch">
+    <div class="cam">
+      <div class="cam-bar"><span class="rec"></span> BENCH CAMERA ${STATE.mode==='live'?'· live':'· demo'}</div>
+      <div class="cam-body"><div>
+        <div class="big">${active&&active.status==='running'?'Recording run…':'Camera ready'}</div>
+        <div style="font-size:13px;max-width:34ch">The live arm feed plugs in here. Until then, watch the bench layout strip above for arm and rail state.</div>
+      </div></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px;min-height:0">
+      <div class="readout" style="flex:1;min-height:0">
+        <div class="r-bar"><span>Run log</span><span>${active?esc(active.model):''}</span></div>
+        <div class="log" id="logBox">${logHtml}</div>
+      </div>
+      <div class="queue">
+        <div class="r-bar" style="border:0;padding-left:0">Queue</div>
+        ${STATE.jobs.length? STATE.jobs.slice(-5).reverse().map(qItem).join('') :
+          '<div class="q-item"><span class="q-dot q-queued"></span><span class="q-task" style="color:var(--muted)">Nothing queued</span></div>'}
+      </div>
+    </div>
+  </div>`;
+  const lb=document.getElementById('logBox'); if(lb) lb.scrollTop=lb.scrollHeight;
+}
+function qItem(j){
+  const cls={running:'q-running',done:'q-done',error:'q-err',queued:'q-queued'}[j.status]||'q-queued';
+  return `<div class="q-item"><span class="q-dot ${cls}"></span>
+    <span class="q-task">${esc(j.task)}</span>
+    <span class="q-meta">${j.status==='running'?'running':j.outcome||j.status}</span></div>`;
+}
+function fmtLog(line){
+  const cls=line.k==='plan'?'l-plan':line.k==='ok'?'l-ok':line.k==='err'?'l-err':line.k==='dim'?'l-dim':'';
+  return `<div class="${cls}">${esc(line.t)}</div>`;
+}
+
+/* ---- SAMPLES ---- */
+function samplesView(){
+  const rows = STATE.mode==='live'? STATE.sessions :
+    STATE.jobs.filter(j=>j.status!=='queued').map(j=>({label:j.task,model:j.model,outcome:j.outcome||(j.status==='error'?'error':'ok'),
+      time:j.started,files:['metadata.json','commands.jsonl','trajectory.h5','llm_session.jsonl']})).reverse();
+  if(!rows.length) return `<div class="empty"><div class="e-card">
+      <h3>No runs yet</h3><p>When you run something on the bench, it's saved here with its plates, tubes and full trajectory.</p>
+      <button class="go" onclick="go('ask')">${ICO.play}<span>Ask the bench</span></button></div></div>`;
+  const COL={ok:'var(--ok)',success:'var(--ok)',error:'var(--err)',failed:'var(--err)'};
+  return `<div class="samples">${rows.map(r=>`
+    <div class="s-row">
+      <span class="s-out" style="background:${COL[(r.outcome||'').toLowerCase()]||'var(--muted-2)'}"></span>
+      <div><h4>${esc(r.label||'Untitled run')}</h4>
+        <div class="s-files">${(r.files||['trajectory.h5']).join(' · ')}</div></div>
+      <span class="s-model">${esc(r.model||'—')}</span>
+      <span class="s-time">${esc(fmtTime(r.time))}</span>
+    </div>`).join('')}</div>`;
+}
+
+/* ---------------- run a task (live or demo) ---------------- */
+async function submit(task){
+  if(STATE.busy) return;
+  STATE.busy=true;
+  const job={id:'j'+Date.now(), task, model:STATE.model, status:'running', log:[], started:new Date().toISOString(), outcome:null};
+  STATE.jobs.push(job);
+  go('watch');
+  if(STATE.mode==='live') await runLive(job); else await runDemo(job);
+  STATE.busy=false;
+  STATE.arm='idle'; drawBench();
+  if(STATE.view==='watch') renderWatch();
+  refreshSessions();
+}
+
+async function runLive(job){
+  try{
+    const res=await api('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({task:job.task,model:job.model})}, 6000);
+    const id=res.job_id;
+    // poll
+    while(true){
+      await sleep(900);
+      let st; try{ st=await api('/api/job/'+id,{},5000);}catch{ break; }
+      job.log = (st.log||[]).map(coerceLine);
+      if(st.arm!=null){STATE.arm=st.arm;} if(st.rail!=null){STATE.rail=st.rail;}
+      animateFromTask(job.task);
+      if(STATE.view==='watch') renderWatch();
+      if(st.status==='done'||st.status==='error'){
+        job.status=st.status; job.outcome=st.outcome||(st.status==='error'?'error':'ok'); break;
+      }
+    }
+  }catch(e){
+    job.status='error'; job.outcome='error';
+    job.log.push({k:'err',t:'Could not reach the bench. Is server.py running on the lab machine?'});
+  }
+}
+
+/* demo: plausible plan/dispatch so the console is feelable without the sim */
+async function runDemo(job){
+  const color=(job.task.match(/red|green|blue/i)||['blue'])[0].toLowerCase();
+  const steps=[
+    {k:'dim',t:`$ run_task "${job.task}" --model ${job.model}`},
+    {k:'',t:'Planning task…'},
+    {k:'plan',t:`plan: locate ${color}_cube → grasp → carry → release over ${color}_bin`},
+    {k:'',t:'Dispatching to bench…'},
+    {k:'',t:`move_rail → ${color} zone`,_arm:'moving',_rail:color==='red'?120:color==='green'?180:240},
+    {k:'',t:`pick_object(${color}_cube)`,_arm:`grasp ${color}`},
+    {k:'',t:`place_object(${color}_bin)`,_arm:`place ${color}`},
+    {k:'ok',t:'✓ task complete · outcome: success'},
+    {k:'dim',t:'saved → recordings/'+ts()+'_session_'+Math.floor(Math.random()*900+100)+'/'}
+  ];
+  for(const st of steps){
+    await sleep(620+Math.random()*420);
+    job.log.push({k:st.k,t:st.t});
+    if(st._arm){STATE.arm=st._arm;} if(st._rail!=null){STATE.rail=st._rail;}
+    drawBench(color); if(STATE.view==='watch') renderWatch();
+  }
+  job.status='done'; job.outcome='success';
+}
+
+function animateFromTask(task){
+  const color=(task.match(/red|green|blue/i)||[''])[0].toLowerCase();
+  if(color) drawBench(color);
+}
+
+/* ---------------- helpers ---------------- */
+function coerceLine(l){ if(typeof l==='string'){
+  const k=/✓|success|complete/i.test(l)?'ok':/error|fail|traceback/i.test(l)?'err':/plan|locate|grasp/i.test(l)?'plan':'';
+  return {k,t:l}; } return l; }
+function fmtTime(iso){ if(!iso) return '—'; const d=new Date(iso); if(isNaN(d)) return String(iso);
+  return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function ts(){ const d=new Date(); return d.toISOString().slice(0,19).replace(/[-:T]/g,''); }
+function esc(s){ return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+const ICO={
+  ask:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F2B23E" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.5 8.6 8.6 0 0 1-3.9-.9L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5z"/></svg>`,
+  proto:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#46C26A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>`,
+  watch:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4C8DFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>`,
+  samples:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#E5484D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v7l-5 8a2 2 0 0 0 1.7 3h12.6a2 2 0 0 0 1.7-3l-5-8V3"/><path d="M7.5 3h9"/></svg>`,
+  play:`<svg width="16" height="16" viewBox="0 0 24 24" fill="#1A1305"><path d="M8 5v14l11-7z"/></svg>`
+};
+
+boot();
+</script>
+</body>
+</html>
