@@ -282,6 +282,8 @@ def main():
         if "llm_dir" in h:
             print(f"  twin project: {h['llm_dir']}  "
                   f"{'[found]' if h.get('llm_dir_found') else '[MISSING — demo mode in browser]'}")
+            if h.get("twin_source"):
+                print(f"  found via   : {h['twin_source']}")
         if "api_key_present" in h:
             print(f"  api key     : {'present' if h['api_key_present'] else 'not set'}")
     print(f"\n  open http://localhost:{PORT}\n")

@@ -37,23 +37,53 @@ _TWIN_REL = Path("xarm6_rail_digital_twin_llm_v5") / "xarm_lab_twin"
 def _find_llm_dir():
     """Locate <twin>/xarm6_rail_digital_twin_llm_v5/xarm_lab_twin.
 
-    Order: explicit env override -> any sibling project containing the path ->
-    the known default name (so health() can still report a sensible path even
-    when the twin is missing, which keeps the browser in demo mode).
+    Returns (path, source) where `source` explains how it was found, so the
+    server banner and /api/health can show it. Resolution order, first hit wins:
+
+      1. env BENCH_TWIN_DIR            -- explicit, wins over everything
+      2. config.json -> "twin_dir"     -- persistent, set once per install
+      3. sibling auto-discovery        -- a project next to A2S2-OS holding the
+                                          twin path (works when both live under
+                                          the same parent, e.g. Models/)
+      4. default fallback              -- the known folder name; may not exist,
+                                          which simply leaves the browser in
+                                          demo mode.
+
+    A relative path in BENCH_TWIN_DIR or config.json is resolved against the OS
+    root, so "../MuJoCo_xArm_dev_HP/..." works regardless of the launch cwd.
     """
+    def _abs(p):
+        p = Path(p).expanduser()
+        return p if p.is_absolute() else (_OS_ROOT / p)
+
+    # 1) explicit env override
     env = os.environ.get("BENCH_TWIN_DIR")
     if env:
-        return Path(env).expanduser().resolve()
+        return _abs(env).resolve(), "env BENCH_TWIN_DIR"
+
+    # 2) persistent config file at the OS root: {"twin_dir": "<path>"}
+    cfg = _OS_ROOT / "config.json"
+    if cfg.is_file():
+        try:
+            td = (json.loads(cfg.read_text()) or {}).get("twin_dir")
+            if td:
+                return _abs(td).resolve(), "config.json"
+        except (ValueError, OSError):
+            pass
+
+    # 3) auto-discover a sibling project that contains the twin path
     try:
         for sib in sorted(_MODELS_DIR.iterdir()):
             if sib.is_dir() and (sib / _TWIN_REL).is_dir():
-                return (sib / _TWIN_REL).resolve()
+                return (sib / _TWIN_REL).resolve(), f"sibling: {sib.name}"
     except OSError:
         pass
-    return (_MODELS_DIR / "MuJoCo_xArm_dev_HP" / _TWIN_REL).resolve()
+
+    # 4) last resort -- known default name (not found => demo mode in browser)
+    return (_MODELS_DIR / "MuJoCo_xArm_dev_HP" / _TWIN_REL).resolve(), "default (not found)"
 
 
-LLM_DIR = _find_llm_dir()
+LLM_DIR, TWIN_SOURCE = _find_llm_dir()
 TWIN_REPO = LLM_DIR.parents[1]       # the twin repo root (parent of the llm project)
 
 # Second recordings root: the "basic" interactive project ships alongside the
@@ -234,6 +264,7 @@ def health():
         "repo": str(TWIN_REPO),
         "llm_dir": str(LLM_DIR),
         "llm_dir_found": found,
+        "twin_source": TWIN_SOURCE,
         "api_key_present": bool(os.environ.get("ANTHROPIC_API_KEY"))
         or (LLM_DIR / ".env").is_file(),
     }

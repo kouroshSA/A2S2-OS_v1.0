@@ -1,0 +1,4 @@
+{
+  "_comment": "Copy this file to config.json to pin where the xArm6 twin lives, for installs that are NOT a sibling of the twin. Delete the lines you don't need. The path may be absolute or relative to the A2S2-OS folder, and ~ is expanded. This is only needed if sibling auto-discovery can't find the twin; check the server startup banner ('found via') to see what it resolved. The env var BENCH_TWIN_DIR overrides this file.",
+  "twin_dir": "/absolute/path/to/MuJoCo_xArm_dev_HP/xarm6_rail_digital_twin_llm_v5/xarm_lab_twin"
+}

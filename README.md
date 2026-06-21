@@ -70,6 +70,37 @@ one-line `task_cmd()` in `apps/bench_console/app.py`.
 
 ---
 
+## Pointing it at the twin
+
+On startup the bench app resolves where the xArm6 twin lives and prints it:
+
+```
+  twin project: /…/MuJoCo_xArm_dev_HP/xarm6_rail_digital_twin_llm_v5/xarm_lab_twin  [found]
+  found via   : sibling: MuJoCo_xArm_dev_HP
+```
+
+`/api/health` reports the same (`llm_dir`, `llm_dir_found`, `twin_source`).
+Resolution order — first hit wins:
+
+1. **`BENCH_TWIN_DIR`** env var — explicit, overrides everything.
+   `BENCH_TWIN_DIR=/path/to/.../xarm_lab_twin python server.py`
+2. **`config.json`** next to `server.py`, key `twin_dir` — set it once per
+   install. Copy `config.example.json` → `config.json` and edit the path.
+   (`config.json` is git-ignored, so your local path is never committed.)
+3. **Sibling auto-discovery** — scans the folder that *contains* `A2S2-OS` for a
+   project holding `xarm6_rail_digital_twin_llm_v5/xarm_lab_twin`. This is why
+   it works with no setup when `A2S2-OS` and the twin sit side by side (e.g.
+   both under `Models/`).
+4. **Default fallback** — the name `MuJoCo_xArm_dev_HP` as a sibling; if absent,
+   the browser simply stays in demo mode.
+
+So: **install `A2S2-OS` beside the twin and it finds it automatically. Install
+it anywhere else and set `twin_dir` in `config.json` once** (or export
+`BENCH_TWIN_DIR`). Paths may be absolute or relative to the `A2S2-OS` folder,
+and `~` is expanded.
+
+---
+
 ## Running on macOS (standalone shell)
 
 The **live** server (`server.py` driving the twin) belongs on the WSL/Linux
