@@ -17,3 +17,8 @@ the address above with a short description of the intended use.
 
 Until such a license is granted in writing, no rights for commercial use are
 conveyed.
+
+Note: the **Additional Terms** in [`LICENSE.md`](LICENSE.md) — citing this
+repository, and including a full copy of the license in any modified version —
+apply to commercial use as well, unless a commercial license expressly states
+otherwise.

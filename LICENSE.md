@@ -1,11 +1,14 @@
 Required Notice: Copyright © 2026 Kourosh Salehi-Ashtiani and New York
 University Abu Dhabi (NYUAD). All rights reserved.
+Required Notice: A2S2-OS — https://github.com/kouroshSA/A2S2-OS_v1.0 — you must
+cite this repository when you use it or any derivative (see CITATION.cff).
 
 A2S2-OS and any derivative works are licensed under the PolyForm Noncommercial
-License 1.0.0 (reproduced in full below). **Noncommercial use is permitted under
-that license. Any commercial use of this software or its derivatives requires a
-separate commercial license** obtained from BOTH Kourosh Salehi-Ashtiani and New
-York University Abu Dhabi. See COMMERCIAL.md for how to request one.
+License 1.0.0 (reproduced in full below), **as supplemented by the Additional
+Terms in this document.** Noncommercial use is permitted under that license.
+**Any commercial use of this software or its derivatives requires a separate
+commercial license** obtained from BOTH Kourosh Salehi-Ashtiani and New York
+University Abu Dhabi. See COMMERCIAL.md for how to request one.
 
 "Commercial use" includes, without limitation, use in or for a product or
 service offered for sale or other commercial advantage, internal use by a
@@ -14,6 +17,44 @@ commercially distributed work — except where such use independently qualifies 
 a permitted purpose under the PolyForm Noncommercial License 1.0.0 below (for
 example, use by an educational institution, public research organization, or
 government institution).
+
+---------------------------------------------------------------------------
+
+# Additional Terms
+
+These Additional Terms supplement, and form part of, the license for the
+software. They are conditions of, and obligations under, every license granted
+for the software — including any separate commercial license granted by the
+copyright holders, unless that commercial license expressly states otherwise.
+If there is any conflict between these Additional Terms and the PolyForm
+Noncommercial License 1.0.0 text below, these Additional Terms control to the
+extent of the conflict.
+
+## 1. Citation and Attribution
+
+If you use the software, or any part of it, or any derivative or modified
+version of it — in any work, including research, software, products, services,
+publications, presentations, or models trained or built with its help — you must
+give clear credit to this project and cite this repository.
+
+At a minimum, attribution must state the project name (**A2S2-OS**), the
+copyright holders (**Kourosh Salehi-Ashtiani and New York University Abu
+Dhabi**), and the repository URL
+(**https://github.com/kouroshSA/A2S2-OS_v1.0**). Academic, scholarly, or
+scientific works must additionally cite the software in their references using
+the citation metadata provided in `CITATION.cff` (equivalently, the repository's
+"Cite this repository" information). This obligation applies whether your use is
+commercial or noncommercial.
+
+## 2. License Propagation (modified versions)
+
+Every copy, modified version, fork, or derivative of the software — **whether
+commercial or noncommercial, and whether or not it is distributed** — must
+include a complete, unaltered copy of this entire LICENSE file (these Additional
+Terms together with the PolyForm Noncommercial License 1.0.0 text below) and must
+preserve all copyright notices and every line beginning with `Required Notice:`.
+These Additional Terms continue to apply to all such modified versions and
+derivatives.
 
 ---------------------------------------------------------------------------
 

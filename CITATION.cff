@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+title: "A2S2-OS — Bench Console"
+message: >-
+  Use of this software or any derivative requires citing this repository
+  (see the Additional Terms in LICENSE.md). Please cite it as below.
+abstract: >-
+  A2S2-OS is a kiosk "Lab OS" shell: a full-screen bench console that lets a
+  bench biologist drive the xArm6 digital twin in plain language, with a
+  pluggable app registry for hosting further lab apps.
+type: software
+authors:
+  - family-names: "Salehi-Ashtiani"
+    given-names: "Kourosh"
+    affiliation: "New York University Abu Dhabi"
+  - name: "New York University Abu Dhabi"
+    alias: "NYUAD"
+version: "1.0.0"
+date-released: "2026-06-21"
+license: "PolyForm-Noncommercial-1.0.0"
+license-url: "https://github.com/kouroshSA/A2S2-OS_v1.0/blob/main/LICENSE.md"
+repository-code: "https://github.com/kouroshSA/A2S2-OS_v1.0"
+url: "https://github.com/kouroshSA/A2S2-OS_v1.0"
+keywords:
+  - "digital twin"
+  - "xArm6"
+  - "lab automation"
+  - "kiosk"
+  - "human-robot interface"

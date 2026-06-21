@@ -253,12 +253,22 @@ desktop autostart entry) and the console comes up on its own.
 
 ## License
 
-A2S2-OS is licensed under the **PolyForm Noncommercial License 1.0.0** — see
-[`LICENSE.md`](LICENSE.md). Noncommercial use (including by educational and
-public-research institutions) is free. **Any commercial use of this software or
-its derivatives requires a separate commercial license from both Kourosh
-Salehi-Ashtiani and New York University Abu Dhabi** — see
-[`COMMERCIAL.md`](COMMERCIAL.md).
+A2S2-OS is licensed under the **PolyForm Noncommercial License 1.0.0, plus
+Additional Terms** — see [`LICENSE.md`](LICENSE.md). Noncommercial use (including
+by educational and public-research institutions) is free. Two obligations apply
+to **all** users:
+
+- **Cite this repository.** Any use of the software or a derivative — in
+  research, software, products, or publications — must credit and cite this
+  repo, using [`CITATION.cff`](CITATION.cff) for scholarly work. Applies to
+  commercial and noncommercial use alike.
+- **Modified versions carry the license.** Every copy, fork, or derivative —
+  commercial or not — must include a complete copy of `LICENSE.md` and keep all
+  `Required Notice:` lines.
+
+**Any commercial use of this software or its derivatives also requires a separate
+commercial license from both Kourosh Salehi-Ashtiani and New York University Abu
+Dhabi** — see [`COMMERCIAL.md`](COMMERCIAL.md).
 
 Copyright © 2026 Kourosh Salehi-Ashtiani and New York University Abu Dhabi.
 
