@@ -284,6 +284,9 @@ def main():
                   f"{'[found]' if h.get('llm_dir_found') else '[MISSING — demo mode in browser]'}")
             if h.get("twin_source"):
                 print(f"  found via   : {h['twin_source']}")
+            if not h.get("llm_dir_found") and h.get("twin_repo_url"):
+                print(f"  get the twin : git clone {h['twin_repo_url']}")
+                print("                 (then place it beside A2S2-OS, or set twin_dir in config.json)")
         if "api_key_present" in h:
             print(f"  api key     : {'present' if h['api_key_present'] else 'not set'}")
     print(f"\n  open http://localhost:{PORT}\n")

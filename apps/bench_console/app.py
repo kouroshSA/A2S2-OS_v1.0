@@ -25,13 +25,47 @@ from pathlib import Path
 
 # ---------------------------------------------------------------- discovery
 # The OS lives in its own project (e.g. Models/A2S2-OS) and sits *on top of* the
-# twin, which is a sibling project (e.g. Models/MuJoCo_xArm_dev_HP). We discover
-# the twin by looking for the well-known LLM-project path under each sibling, so
-# the twin's repo folder can be renamed without touching this file.
+# twin: a clone of the xArm6 digital-twin repo. We identify the twin by the
+# well-known LLM-project path it contains, NOT by its folder name -- so any
+# clone works (the default `git clone` name, a renamed copy, anything).
+TWIN_REPO_URL = "https://github.com/kouroshSA/xarm6-digital-twin-v5"
+TWIN_REPO_NAME = "xarm6-digital-twin-v5"   # the folder name `git clone` creates
 _HERE = Path(__file__).resolve()
 _OS_ROOT = _HERE.parents[2]          # apps/bench_console/app.py -> A2S2-OS
 _MODELS_DIR = _HERE.parents[3]       # the directory that holds both projects
 _TWIN_REL = Path("xarm6_rail_digital_twin_llm_v5") / "xarm_lab_twin"
+
+
+def _scan_for_twin(roots):
+    """Scan candidate roots for a twin clone. Returns (llm_dir, source) or None.
+
+    Identification is by content, not folder name: any child directory that
+    contains <child>/xarm6_rail_digital_twin_llm_v5/xarm_lab_twin is a twin
+    clone. A child literally named `xarm6-digital-twin-v5` is preferred when
+    several match, so the canonical clone wins over an unrelated leftover.
+    """
+    seen = set()
+    for root in roots:
+        try:
+            root = root.resolve()
+        except OSError:
+            continue
+        if root in seen:
+            continue
+        seen.add(root)
+        try:
+            entries = sorted(p for p in root.iterdir() if p.is_dir())
+        except OSError:
+            continue
+        # prefer the canonical clone name
+        for sib in entries:
+            if sib.name == TWIN_REPO_NAME and (sib / _TWIN_REL).is_dir():
+                return (sib / _TWIN_REL).resolve(), f"clone: {sib.name}"
+        # otherwise any folder that holds the twin path (name-independent)
+        for sib in entries:
+            if (sib / _TWIN_REL).is_dir():
+                return (sib / _TWIN_REL).resolve(), f"found in: {sib.name}"
+    return None
 
 
 def _find_llm_dir():
@@ -42,15 +76,14 @@ def _find_llm_dir():
 
       1. env BENCH_TWIN_DIR            -- explicit, wins over everything
       2. config.json -> "twin_dir"     -- persistent, set once per install
-      3. sibling auto-discovery        -- a project next to A2S2-OS holding the
-                                          twin path (works when both live under
-                                          the same parent, e.g. Models/)
-      4. default fallback              -- the known folder name; may not exist,
-                                          which simply leaves the browser in
-                                          demo mode.
+      3. clone auto-discovery          -- any clone of the twin repo found beside
+                                          A2S2-OS, inside it, or under the home
+                                          dir (identified by content, not name)
+      4. default fallback              -- the canonical clone name as a sibling;
+                                          if absent the browser stays in demo mode.
 
     A relative path in BENCH_TWIN_DIR or config.json is resolved against the OS
-    root, so "../MuJoCo_xArm_dev_HP/..." works regardless of the launch cwd.
+    root, so "../xarm6-digital-twin-v5/..." works regardless of the launch cwd.
     """
     def _abs(p):
         p = Path(p).expanduser()
@@ -71,16 +104,17 @@ def _find_llm_dir():
         except (ValueError, OSError):
             pass
 
-    # 3) auto-discover a sibling project that contains the twin path
+    # 3) auto-discover a clone of the twin repo (by content, any folder name)
     try:
-        for sib in sorted(_MODELS_DIR.iterdir()):
-            if sib.is_dir() and (sib / _TWIN_REL).is_dir():
-                return (sib / _TWIN_REL).resolve(), f"sibling: {sib.name}"
-    except OSError:
-        pass
+        home = Path.home()
+    except (RuntimeError, OSError):
+        home = _MODELS_DIR
+    hit = _scan_for_twin([_MODELS_DIR, _OS_ROOT, home])
+    if hit:
+        return hit
 
-    # 4) last resort -- known default name (not found => demo mode in browser)
-    return (_MODELS_DIR / "MuJoCo_xArm_dev_HP" / _TWIN_REL).resolve(), "default (not found)"
+    # 4) last resort -- canonical clone name as a sibling (not found => demo mode)
+    return (_MODELS_DIR / TWIN_REPO_NAME / _TWIN_REL).resolve(), "default (not found)"
 
 
 LLM_DIR, TWIN_SOURCE = _find_llm_dir()
@@ -265,6 +299,7 @@ def health():
         "llm_dir": str(LLM_DIR),
         "llm_dir_found": found,
         "twin_source": TWIN_SOURCE,
+        "twin_repo_url": TWIN_REPO_URL,
         "api_key_present": bool(os.environ.get("ANTHROPIC_API_KEY"))
         or (LLM_DIR / ".env").is_file(),
     }

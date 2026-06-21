@@ -13,6 +13,9 @@ Linux distro, not a desktop environment.
 > racks, protocols, results) and never leaks robotics/ROS nouns. Internal code
 > comments use the real terms; user-facing strings do not.
 
+**New here? See [`quick_start.md`](quick_start.md)** for a few-minute setup
+(demo or live).
+
 ---
 
 ## Layout
@@ -28,19 +31,23 @@ Models/
 │   │   └── bench_console/
 │   │       └── app.py           # app #1 — everything xArm-specific lives here
 │   └── README.md
-└── MuJoCo_xArm_dev_HP/         # the twin repo (github: xarm6-digital-twin-v5)
+└── xarm6-digital-twin-v5/      # the twin: a clone of the repo below (any folder name)
     └── xarm6_rail_digital_twin_llm_v5/xarm_lab_twin/
         ├── scripts/run_task.py
         └── recordings/<session>/
 ```
+
+The twin is a clone of **<https://github.com/kouroshSA/xarm6-digital-twin-v5>**.
+`git clone` names the folder `xarm6-digital-twin-v5`, but the OS identifies the
+twin by the project path it contains, **not** by folder name — so a renamed
+clone works just as well.
 
 `server.py` (the OS) is **app-agnostic** — it serves the shell and runs the
 machinery every app needs (a threaded job runner, live logs, an app registry).
 Everything specific to the xArm twin lives in `apps/bench_console/app.py`:
 where the twin is, the command that runs a task, how saved runs are read, and
 how a log line maps to on-screen bench state. The bench app **auto-discovers**
-the twin as a sibling project (no hard-coded repo folder name; override with
-`BENCH_TWIN_DIR`).
+the twin clone (see [Pointing it at the twin](#pointing-it-at-the-twin)).
 
 ---
 
@@ -87,17 +94,20 @@ Resolution order — first hit wins:
 2. **`config.json`** next to `server.py`, key `twin_dir` — set it once per
    install. Copy `config.example.json` → `config.json` and edit the path.
    (`config.json` is git-ignored, so your local path is never committed.)
-3. **Sibling auto-discovery** — scans the folder that *contains* `A2S2-OS` for a
-   project holding `xarm6_rail_digital_twin_llm_v5/xarm_lab_twin`. This is why
-   it works with no setup when `A2S2-OS` and the twin sit side by side (e.g.
-   both under `Models/`).
-4. **Default fallback** — the name `MuJoCo_xArm_dev_HP` as a sibling; if absent,
-   the browser simply stays in demo mode.
+3. **Clone auto-discovery** — looks for a clone of the twin repo (any folder
+   name) in the folder that *contains* `A2S2-OS`, inside `A2S2-OS` itself, and
+   under your home directory. A clone is recognized by the project path it holds
+   (`xarm6_rail_digital_twin_llm_v5/xarm_lab_twin`), not its name; a folder named
+   `xarm6-digital-twin-v5` wins if several match. This is why it works with no
+   setup when the twin sits beside `A2S2-OS`.
+4. **Default fallback** — the canonical clone name `xarm6-digital-twin-v5` as a
+   sibling; if absent, the browser simply stays in demo mode (the startup banner
+   then prints the `git clone` command for the repo).
 
-So: **install `A2S2-OS` beside the twin and it finds it automatically. Install
-it anywhere else and set `twin_dir` in `config.json` once** (or export
-`BENCH_TWIN_DIR`). Paths may be absolute or relative to the `A2S2-OS` folder,
-and `~` is expanded.
+So: **clone the twin beside `A2S2-OS` and it finds it automatically, whatever
+the folder is named.** Install `A2S2-OS` somewhere unrelated and set `twin_dir`
+in `config.json` once (or export `BENCH_TWIN_DIR`). Paths may be absolute or
+relative to the `A2S2-OS` folder, and `~` is expanded.
 
 ---
 
