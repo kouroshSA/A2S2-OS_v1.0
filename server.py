@@ -112,10 +112,36 @@ def load_apps():
 APPS = load_apps()
 
 
-def active_app():
+def _initial_active():
+    """The app the shell drives at startup: env/default if installed, else the
+    first app found, else None."""
     if DEFAULT_APP in APPS:
-        return APPS[DEFAULT_APP]
+        return DEFAULT_APP
+    return next(iter(APPS), None)
+
+
+# The active app is switchable at runtime (POST /api/active) so the shell can
+# offer an in-UI app switcher. Guarded because the HTTP server is threaded.
+ACTIVE_APP_ID = _initial_active()
+ACTIVE_LOCK = threading.Lock()
+
+
+def active_app():
+    with ACTIVE_LOCK:
+        aid = ACTIVE_APP_ID
+    if aid and aid in APPS:
+        return APPS[aid]
     return next(iter(APPS.values())) if APPS else None
+
+
+def set_active_app(app_id):
+    """Switch the active app. Returns True if `app_id` is installed."""
+    global ACTIVE_APP_ID
+    if app_id not in APPS:
+        return False
+    with ACTIVE_LOCK:
+        ACTIVE_APP_ID = app_id
+    return True
 
 
 # ---------------------------------------------------------------- job store
@@ -247,6 +273,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         p = self.path.split("?")[0]
+        if p == "/api/active":
+            n = int(self.headers.get("Content-Length", "0") or 0)
+            try:
+                body = json.loads(self.rfile.read(n) or b"{}")
+            except Exception:
+                return self._send(400, {"error": "bad json"})
+            aid = (body.get("app") or "").strip()
+            if set_active_app(aid):
+                # Hand back the full health payload so the shell can re-skin in
+                # one round-trip (active_app, ready, manifests).
+                return self._send(200, health_payload())
+            return self._send(400, {"error": "unknown app",
+                                    "apps": [a.id for a in APPS.values()]})
         if p == "/api/run":
             n = int(self.headers.get("Content-Length", "0") or 0)
             try:

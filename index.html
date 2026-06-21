@@ -55,6 +55,13 @@
   .brand h1{font-family:"Space Grotesk";font-size:15px;font-weight:600;letter-spacing:.04em}
   .brand small{display:block;font-size:11px;color:var(--muted);font-weight:500;letter-spacing:.12em;text-transform:uppercase}
   .top-spacer{flex:1}
+  .appsel{font-family:"IBM Plex Mono";font-size:12px;color:var(--text);background:var(--panel);
+    border:1px solid var(--line);border-radius:999px;padding:6px 12px 6px 30px;cursor:pointer;outline:none;
+    -webkit-appearance:none;appearance:none;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237E938C' stroke-width='2'><rect x='3' y='4' width='18' height='16' rx='2'/><path d='M3 9h18'/></svg>");
+    background-repeat:no-repeat;background-position:10px center}
+  .appsel:hover{border-color:var(--line-2)}
+  .appsel option{background:var(--panel);color:var(--text)}
   .conn{display:flex;align-items:center;gap:8px;font-family:"IBM Plex Mono";font-size:12px;
     padding:6px 11px;border:1px solid var(--line);border-radius:999px;color:var(--muted)}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--muted-2)}
@@ -201,6 +208,8 @@
       <div class="mark"></div>
       <div><h1>Lab OS</h1><small>A2S2 Bench Console</small></div>
     </div>
+    <select id="appSel" class="appsel" title="Switch app" aria-label="Switch app"
+            onchange="switchApp(this.value)" style="display:none"></select>
     <div class="top-spacer"></div>
     <div id="conn" class="conn demo"><span class="dot"></span><span id="connText">Demo bench</span></div>
     <div id="clock" class="clock">--:--</div>
@@ -235,6 +244,8 @@ const STATE = {
   mode:'demo',          // 'live' | 'demo'
   view:'home',
   model:'haiku',
+  apps:[],             // installed app manifests (from /api/health)
+  appId:null,          // active app id
   jobs:[],              // {id, task, status, log[], outcome, model, started}
   sessions:[],
   busy:false,
@@ -268,8 +279,11 @@ async function boot(){
     const h = await api('/api/health', {}, 2500);
     STATE.mode = h.ready ? 'live' : 'demo';
     STATE._health = h;
+    STATE.apps = Array.isArray(h.apps) ? h.apps : [];
+    STATE.appId = h.active_app || (STATE.apps[0] && STATE.apps[0].id) || null;
   }catch{ STATE.mode='demo'; }
   setConn();
+  renderAppSwitcher(); applyAppIdentity();
   try{ const lib = await api('/api/library'); if(Array.isArray(lib)&&lib.length) LIBRARY.splice(0,LIBRARY.length,...lib);}catch{}
   await refreshSessions();
   drawBench();
@@ -284,6 +298,39 @@ function setConn(){
   c.className = 'conn '+(live?'live':'demo');
   document.getElementById('connText').textContent = live ? 'Connected to bench' : 'Demo bench';
   document.getElementById('demoBanner').style.display = live ? 'none':'block';
+}
+
+/* ---------------- app switcher ---------------- */
+function renderAppSwitcher(){
+  const sel=document.getElementById('appSel'); if(!sel) return;
+  if(STATE.apps.length<2){ sel.style.display='none'; return; }   // nothing to switch to
+  sel.style.display='';
+  sel.innerHTML=STATE.apps.map(a=>
+    `<option value="${esc(a.id)}"${a.id===STATE.appId?' selected':''}>${esc(a.name||a.id)}</option>`).join('');
+}
+function applyAppIdentity(){
+  const a=STATE.apps.find(x=>x.id===STATE.appId);
+  const small=document.querySelector('.brand small');
+  if(a&&small) small.textContent=a.name||a.tagline||'Lab OS';
+  if(a) document.title='Lab OS — '+(a.name||a.id);
+}
+async function switchApp(id){
+  if(!id||id===STATE.appId) return;
+  let h;
+  try{
+    h=await api('/api/active',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({app:id})},5000);
+  }catch(e){ renderAppSwitcher(); return; }   // revert <select> on failure
+  STATE._health=h; STATE.mode=h.ready?'live':'demo';
+  STATE.appId=h.active_app||id; STATE.apps=Array.isArray(h.apps)?h.apps:STATE.apps;
+  // reload the now-active app's library + saved runs; clear this session's jobs
+  try{ const lib=await api('/api/library'); LIBRARY.splice(0,LIBRARY.length,...(Array.isArray(lib)?lib:[])); }
+  catch{ LIBRARY.splice(0,LIBRARY.length); }
+  STATE.jobs=[]; STATE.sessions=[];
+  await refreshSessions();
+  setConn(); renderAppSwitcher(); applyAppIdentity();
+  STATE.arm='idle'; STATE.rail=0; drawBench();
+  STATE.view='home'; render();
 }
 
 async function refreshSessions(){
