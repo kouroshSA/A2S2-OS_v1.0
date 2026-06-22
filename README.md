@@ -28,8 +28,10 @@ Models/
 │   ├── index.html               # the console (shell) — one self-contained file
 │   ├── server.py                # the OS bridge: serves the shell, runs jobs, app registry
 │   ├── apps/
-│   │   └── bench_console/
-│   │       └── app.py           # app #1 — everything xArm-specific lives here
+│   │   ├── bench_console/
+│   │   │   └── app.py           # app #1 — everything xArm-specific lives here
+│   │   └── ppi_gplm/
+│   │       └── app.py           # app #2 — ppiGPLM protein-pair classifier
 │   └── README.md
 └── xarm6-digital-twin-v5/      # the twin: a clone of the repo below (any folder name)
     └── xarm6_rail_digital_twin_llm_v5/xarm_lab_twin/
@@ -53,16 +55,20 @@ the twin clone (see [Pointing it at the twin](#pointing-it-at-the-twin)).
 
 ## Run
 
-On the lab machine, with the twin's conda env active:
+On the lab machine:
 
 ```bash
-conda activate xarm6sim
 python server.py            # serves http://localhost:8770
 ```
 
-Launching from inside `xarm6sim` matters: the bench app runs `run_task.py` with
-the **same** Python interpreter that started the server, so the env carries
-through. Open <http://localhost:8770>.
+You **no longer need to `conda activate`** first. Each app declares the conda
+env its tasks need (`conda_env` in its MANIFEST — see
+[Apps & environments](#apps--environments)), and the OS launches tasks with
+`conda run -n <env>` so the right interpreter and its fully activated
+environment (PATH, `LD_LIBRARY_PATH`, CUDA libs) are used no matter which env
+started the server. If `conda` can't be found, the OS falls back to the app's
+own interpreter choice — in that case launch from the app's env (e.g.
+`conda activate xarm6sim`) as before. Open <http://localhost:8770>.
 
 - Twin reachable → **live mode**, badge reads **Connected to bench**.
 - Twin missing / `server.py` not running → **demo bench**: an amber banner and
@@ -70,10 +76,54 @@ through. Open <http://localhost:8770>.
   simulated run as a real one. (Open `index.html` directly in a browser to get
   the demo with no server at all.)
 
-Config knobs (env): `A2S2_OS_PORT` (default `8770`), `A2S2_OS_APP` (active app,
-default `bench_console`), `LAB_OS_PYTHON` (interpreter for tasks),
-`BENCH_TWIN_DIR` (override twin discovery). To change the task CLI, edit the
-one-line `task_cmd()` in `apps/bench_console/app.py`.
+Config knobs (env): `A2S2_OS_PORT` (default `8770`), `A2S2_OS_APP` (active app
+at startup, default `bench_console` — switchable later from the UI),
+`LAB_OS_PYTHON` (bench-app interpreter override), `BENCH_TWIN_DIR` (override
+twin discovery). ppiGPLM app: `PPIGPLM_DIR` (override repo discovery),
+`PPIGPLM_PYTHON` (interpreter fallback when conda is absent), `PPIGPLM_DEVICE`
+(`cuda`/`cpu`; default auto-detect). To change a task's CLI, edit the one-line
+`task_cmd()` in that app's `app.py`.
+
+---
+
+## Apps & environments
+
+The OS hosts multiple apps and the shell can switch between them at runtime:
+
+- **Bench Console** (`bench_console`) — the xArm6 digital twin (env `xarm6sim`).
+- **ppiGPLM** (`ppi_gplm`) — a GPT-2-small protein language model that scores
+  protein-protein interactions (env `gpt`). Pick a sample protocol or paste a
+  structured prompt; runs land under **My samples & results**.
+
+**Switching apps.** A dropdown in the top bar lists every installed app; choosing
+one re-skins the console and reloads that app's library and saved runs. The
+startup default is `A2S2_OS_APP` (or the first app found). Under the hood the
+shell calls `POST /api/active {"app": "<id>"}`.
+
+**Per-app conda env — the `conda_env` manifest field.** An app declares the
+conda env its tasks run in:
+
+```python
+MANIFEST = {"id": "ppi_gplm", "name": "ppiGPLM", "conda_env": "gpt", ...}
+```
+
+When `conda_env` is set **and** conda is found, the OS runs that app's tasks as:
+
+```
+conda run --no-capture-output -n <conda_env> python <script> ...
+```
+
+so the correct interpreter and its full activated environment are used
+regardless of which env launched `server.py`. Notes:
+
+- `--no-capture-output` keeps the run log **streaming live** (plain `conda run`
+  buffers until the process exits).
+- The wrapper substitutes a bare `python` for the interpreter the app's
+  `task_cmd()` returned, so conda runs the *target env's* python (not the
+  server's). The app's own interpreter remains the fallback when conda is absent.
+- Omit `conda_env` for apps that need no special env — tasks then run with the
+  interpreter `task_cmd()` chose (e.g. `sys.executable`).
+- Each `conda run` adds ~1–2 s of activation overhead per task launch.
 
 ---
 
@@ -166,6 +216,7 @@ cross-platform and would serve it unchanged.
 | GET | `/api/library` | active app's curated protocol list |
 | GET | `/api/sessions` | active app's saved runs, newest first (cap 80) |
 | POST | `/api/run` | `{task, model}` → `{job_id}` |
+| POST | `/api/active` | `{app}` → health payload; switches the active app |
 | GET | `/api/job/<id>` | `{status, log[], outcome, arm, rail, session_dir}` |
 
 `status`: `queued → running → done|error`. `outcome`: `success|error` from the
@@ -200,7 +251,8 @@ microscope), create `apps/<your_app>/app.py` exposing this surface — the OS
 discovers it automatically and `/api/apps` lists it:
 
 ```python
-MANIFEST = {"id": "my_app", "name": "My App", "tagline": "...", "models": [...]}
+MANIFEST = {"id": "my_app", "name": "My App", "tagline": "...",
+            "models": [...], "conda_env": "my_env"}   # conda_env is optional
 
 def health():       ...   # {ready, ...}            drives the live/demo badge
 def library():      ...   # [ {color,title,task,desc}, ... ]   curated protocols
@@ -209,11 +261,13 @@ def task_cmd(task, model):  ...   # -> (argv, cwd, env)   how one task runs
 def classify_line(line):    ...   # -> {k, arm, rail, session_dir}   log line -> state
 ```
 
-Only `task_cmd` is required; the OS fills in safe defaults for the rest. Select
-it with `A2S2_OS_APP=my_app`. The job runner, live logs, and the whole endpoint
-contract are provided by the OS — an app never re-implements them. A shell-side
-app launcher (pick an app, then enter it) is the next step once a second app
-lands; today the shell drives the single active app directly.
+Only `task_cmd` is required; the OS fills in safe defaults for the rest. Set
+`conda_env` in the MANIFEST to have the OS run the app's tasks via
+`conda run -n <env>` (see [Apps & environments](#apps--environments)); omit it
+to run with whatever interpreter `task_cmd()` returns. The app starts active if
+`A2S2_OS_APP=my_app`, and is selectable any time from the top-bar **app
+switcher**. The job runner, live logs, and the whole endpoint contract are
+provided by the OS — an app never re-implements them.
 
 ---
 
@@ -280,8 +334,8 @@ Copyright © 2026 Kourosh Salehi-Ashtiani and New York University Abu Dhabi.
   the existing WebXR / nginx-FFmpeg HLS stream in later.
 - **Kiosk lockdown** — shortcut suppression, crash-restart, screen-lock.
 - **Auth'd "advanced" exit** to a real desktop for maintainers.
-- **App launcher + multi-app** — a second app (2nd xArm6, Lite 6, OT-2,
-  microscope) turns the home into an OS-level launcher. The app registry here is
-  the seam to grow.
+- **App launcher + multi-app** — *shipped:* a top-bar app switcher and a second
+  app (ppiGPLM) now run on the registry seam. Next: more apps (2nd xArm6, Lite 6,
+  OT-2, microscope) and a richer home-screen launcher.
 - **Provenance / Algae Senate hook** — "Ask" is the natural place to route a
   co-scientist query later.
