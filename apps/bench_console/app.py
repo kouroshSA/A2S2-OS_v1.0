@@ -315,5 +315,10 @@ MANIFEST = {
     "summary": "Drive the xArm6 lab bench in plain words — cubes, bins, tubes, racks.",
     "accent": "#F2B23E",
     "models": ["haiku", "sonnet"],
+    # The twin (run_task.py + MuJoCo) runs in the `xarm6sim` env. Declaring it
+    # lets the OS launch tasks via `conda run -n xarm6sim` even if the server
+    # itself was started from a different env. task_cmd's sys.executable default
+    # remains the fallback when conda isn't found.
+    "conda_env": "xarm6sim",
     "vocabulary": "bench biology (plates, samples, tubes, cubes, bins, racks, protocols, results)",
 }

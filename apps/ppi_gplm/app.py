@@ -417,5 +417,9 @@ MANIFEST = {
     "summary": "Score protein-protein interactions with a GPT-2-small protein language model — paste a prompt or run the MED4 sample.",
     "accent": "#3EC1A6",
     "models": ["ppiGPLM"],
+    # Run inference via `conda run -n gpt` (torch + CUDA live there). The OS
+    # honours this; _gpt_python() below stays as the fallback when conda is
+    # unavailable.
+    "conda_env": "gpt",
     "vocabulary": "molecular biology (proteins, protein pairs, interactions, MED4 interactome, interaction probability)",
 }

@@ -32,6 +32,7 @@ Kiosk (boot-to-console):
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import threading
 import uuid
@@ -45,6 +46,53 @@ PORT = int(os.environ.get("A2S2_OS_PORT", os.environ.get("LAB_OS_PORT", "8770"))
 # Which app the shell drives. Defaults to the first installed app; with one
 # app that is the Bench Console.
 DEFAULT_APP = os.environ.get("A2S2_OS_APP", "bench_console")
+
+
+# ---------------------------------------------------------------- conda envs
+# Each app may declare a `conda_env` in its MANIFEST. When set (and conda is
+# present), the OS runs that app's tasks via `conda run -n <env> ...` so the
+# right interpreter + its full activated environment (PATH, LD_LIBRARY_PATH,
+# CUDA libs, ...) are used regardless of which env launched the server. This
+# decouples each app from the server's own env (e.g. the server runs in
+# `xarm6sim` while ppiGPLM needs `gpt`). If conda can't be found, we fall back
+# to whatever interpreter the app's task_cmd chose, so nothing hard-breaks.
+def _find_conda():
+    exe = os.environ.get("CONDA_EXE")
+    if exe and Path(exe).is_file():
+        return exe
+    found = shutil.which("conda")
+    if found:
+        return found
+    try:
+        home = Path.home()
+    except (RuntimeError, OSError):
+        home = Path(".")
+    for d in ("anaconda3", "miniconda3", "miniforge3", "mambaforge"):
+        for sub in ("bin/conda", "condabin/conda"):
+            c = home / d / sub
+            if c.is_file():
+                return str(c)
+    return None
+
+
+CONDA = _find_conda()
+
+
+def wrap_for_env(argv, conda_env):
+    """Prefix argv with `conda run -n <env>` when an env is declared and conda
+    is available. --no-capture-output keeps the child's stdout streaming live
+    (plain `conda run` buffers until exit, which would stall the run log).
+
+    If argv[0] is a python interpreter, it's replaced with a bare `python` so
+    conda runs the *target env's* interpreter rather than whatever python the
+    app picked (often the server's own). Non-python entry points are left as-is.
+    The original argv is the fallback used when conda can't be found."""
+    if not conda_env or not CONDA or not argv:
+        return argv
+    inner = list(argv)
+    if os.path.basename(str(inner[0])).lower().startswith("python"):
+        inner[0] = "python"
+    return [CONDA, "run", "--no-capture-output", "-n", conda_env, *inner]
 
 
 # ---------------------------------------------------------------- app registry
@@ -61,6 +109,8 @@ class App:
         self.id = self.manifest.get("id") or app_id
         self.manifest.setdefault("id", self.id)
         self.manifest.setdefault("name", self.id)
+        # Optional conda env this app's tasks should run in (see wrap_for_env).
+        self.conda_env = self.manifest.get("conda_env")
 
     def health(self):
         fn = getattr(self.mod, "health", None)
@@ -75,14 +125,17 @@ class App:
         return fn() if fn else []
 
     def task_cmd(self, task, model):
-        """Return (argv, cwd, env). cwd/env may be None."""
+        """Return (argv, cwd, env). cwd/env may be None. argv is wrapped with
+        `conda run -n <env>` when this app declares a conda_env and conda is
+        available (the app's own interpreter choice remains the fallback)."""
         out = self.mod.task_cmd(task, model)
         if isinstance(out, tuple):
             argv = list(out[0])
             cwd = out[1] if len(out) > 1 else None
             env = out[2] if len(out) > 2 else None
-            return argv, cwd, env
-        return list(out), None, None
+        else:
+            argv, cwd, env = list(out), None, None
+        return wrap_for_env(argv, self.conda_env), cwd, env
 
     def classify_line(self, line):
         fn = getattr(self.mod, "classify_line", None)
@@ -315,7 +368,12 @@ def main():
     else:
         for a in APPS.values():
             mark = " *active" if app and a.id == app.id else ""
-            print(f"  app         : {a.id} — {a.manifest.get('name')}{mark}")
+            if a.conda_env:
+                env_note = (f" [env: {a.conda_env} via conda run]" if CONDA
+                            else f" [env: {a.conda_env} — conda NOT found, using app default]")
+            else:
+                env_note = ""
+            print(f"  app         : {a.id} — {a.manifest.get('name')}{mark}{env_note}")
     if app:
         h = app.health()
         if "llm_dir" in h:
