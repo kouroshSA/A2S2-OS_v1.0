@@ -127,29 +127,225 @@ BASIC_RECORDINGS = (
 )
 
 
-# ---------------------------------------------------------------- run command
-def task_cmd(task, model):
-    """The exact command + working directory used to run one bench task.
+# ---------------------------------------------------------------- modes
+# The twin can be driven in several distinct ways ("modes of operation"). Each
+# maps to one of the twin's scripts with a fixed set of flags. The OS shell
+# renders one card + parameter form per mode from these descriptors, so adding
+# or retuning a mode is a data edit here -- the server and shell stay generic.
+#
+# Field contract (read by server.py and index.html):
+#   id          stable key; build_cmd() switches on it
+#   name        card title (bench-friendly, no robotics nouns)
+#   tagline     one-line subtitle on the card
+#   desc        paragraph shown on the runner screen
+#   accent      hex colour for the card swatch
+#   gallery     True  -> shown in the "Lab modes" gallery
+#               False -> reachable only via the dedicated "Ask"/"Protocol" tiles
+#   needs_task  True  -> a free-text task is required before running
+#   task_hint   placeholder for the task box (when needs_task)
+#   long_running True -> runs until stopped (no natural end); shell shows Stop
+#   params      list of {id,label,type,default,...}; type in
+#               {choice(+choices), int(+min/max[,optional]), bool}
+#
+# All non-interactive flags below (--save-all, --auto-accept-variants,
+# --no-annotate) are REQUIRED: the OS launches children with stdin detached, so
+# any script that would otherwise prompt must be told not to.
+MODES = [
+    {
+        "id": "task", "name": "Ask the bench",
+        "tagline": "One task, planned and run",
+        "desc": "Say a single task in plain words; the bench plans it and runs "
+                "it once, saving the result.",
+        "accent": "#F2B23E", "gallery": False, "needs_task": True,
+        "task_hint": "e.g. Put the green cube in the green bin",
+        "params": [
+            {"id": "model", "label": "Planner", "type": "choice",
+             "choices": ["haiku", "sonnet"], "default": "haiku"},
+        ],
+    },
+    {
+        "id": "learn", "name": "Self-learning loop",
+        "tagline": "Repeat one task and improve",
+        "desc": "The bench attempts a single task many times, learning as it "
+                "goes — plans that worked are reused, and what failed becomes a "
+                "constraint for the next attempt. Ends with an improvement "
+                "summary across the run.",
+        "accent": "#46C26A", "gallery": True, "needs_task": True,
+        "task_hint": "e.g. Put the red cube in the red bin",
+        "params": [
+            {"id": "max_episodes", "label": "Attempts", "type": "int",
+             "default": 10, "min": 2, "max": 50},
+            {"id": "stringency", "label": "Grading", "type": "choice",
+             "choices": ["loose", "normal", "strict"], "default": "loose"},
+            {"id": "model", "label": "Planner", "type": "choice",
+             "choices": ["haiku", "sonnet"], "default": "haiku"},
+        ],
+    },
+    {
+        "id": "autoplay", "name": "Auto-play batch",
+        "tagline": "The bench invents and runs varied tasks",
+        "desc": "The bench writes a batch of diverse tasks from the objects on "
+                "the bench (cubes, bins, tubes, racks) and runs them "
+                "back-to-back. Each is saved as its own result, and a review of "
+                "the whole batch is written at the end.",
+        "accent": "#4C8DFF", "gallery": True, "needs_task": False,
+        "params": [
+            {"id": "episodes", "label": "Tasks", "type": "int",
+             "default": 5, "min": 1, "max": 50},
+            {"id": "model", "label": "Planner", "type": "choice",
+             "choices": ["haiku", "sonnet"], "default": "haiku"},
+        ],
+    },
+    {
+        "id": "random", "name": "Random play",
+        "tagline": "Generate training data — no planner",
+        "desc": "The arm samples random reachable poses and moves through them "
+                "with no language model in the loop — a fast way to generate "
+                "trajectory data for training. Each run is saved in the standard "
+                "result format.",
+        "accent": "#E5484D", "gallery": True, "needs_task": False,
+        "params": [
+            {"id": "episodes", "label": "Runs", "type": "int",
+             "default": 10, "min": 1, "max": 200},
+            {"id": "moves_per_episode", "label": "Moves each", "type": "int",
+             "default": 8, "min": 1, "max": 40},
+            {"id": "seed", "label": "Seed", "type": "int",
+             "default": "", "min": 0, "max": 999999, "optional": True},
+        ],
+    },
+    {
+        "id": "augment", "name": "Augment a task",
+        "tagline": "Many variations of one task",
+        "desc": "Runs one task across several cycles — rewording it and nudging "
+                "object positions a little each time — to build a small, varied "
+                "dataset around a single task.",
+        "accent": "#F2B23E", "gallery": True, "needs_task": True,
+        "task_hint": "e.g. Put the red cube in the red bin",
+        "params": [
+            {"id": "cycles", "label": "Cycles", "type": "int",
+             "default": 4, "min": 2, "max": 30},
+            {"id": "pos_jitter_mm", "label": "Position jitter (mm)",
+             "type": "int", "default": 20, "min": 0, "max": 100},
+            {"id": "rot_jitter_deg", "label": "Rotation jitter (deg)",
+             "type": "int", "default": 45, "min": 0, "max": 180},
+            {"id": "model", "label": "Planner", "type": "choice",
+             "choices": ["haiku", "sonnet"], "default": "haiku"},
+        ],
+    },
+    {
+        "id": "vr", "name": "VR teleoperation",
+        "tagline": "Hand-guide the bench from a headset",
+        "desc": "Starts the VR teleoperation server so you can drive the bench "
+                "by hand from a headset and record demonstrations. Open the "
+                "address shown in the run log on the headset; press Stop here "
+                "when you are finished.",
+        "accent": "#4C8DFF", "gallery": True, "needs_task": False,
+        "long_running": True,
+        "params": [
+            {"id": "view", "label": "View", "type": "choice",
+             "choices": ["mono", "stereo"], "default": "mono"},
+        ],
+    },
+]
 
-    Edit this one function if the twin's CLI ever changes. Returns
-    (argv, cwd, env). We default the interpreter to the very Python running the
-    OS server so a `conda activate xarm6sim` before launch carries through to
-    the child process automatically.
+
+def modes():
+    return MODES
+
+
+# ---------------------------------------------------------------- run command
+def _py():
+    """The interpreter the twin's scripts run under. Defaults to the very Python
+    running the OS server so a `conda activate xarm6sim` before launch carries
+    through; the OS may still wrap this in `conda run -n xarm6sim`."""
+    return os.environ.get("LAB_OS_PYTHON") or sys.executable or "python"
+
+
+def build_cmd(mode, task, params):
+    """Build the exact command + working dir for one run of `mode`.
+
+    This is the single place that knows the twin's CLI for every mode. Returns
+    (argv, cwd, env). `params` is the shell's parameter dict for the mode (keys
+    match the `params[].id` in MODES); missing keys fall back to the descriptor
+    defaults. Edit here if the twin's flags ever change.
     """
-    py = os.environ.get("LAB_OS_PYTHON") or sys.executable or "python"
-    argv = [py, "scripts/run_task.py", task, "--model", model]
+    py = _py()
+    p = params or {}
+
+    def i(key, default):           # int param, tolerant of strings/blanks
+        try:
+            return int(float(str(p.get(key, default)).strip()))
+        except (TypeError, ValueError):
+            return int(default)
+
+    def f(key, default):           # float param
+        try:
+            return float(str(p.get(key, default)).strip())
+        except (TypeError, ValueError):
+            return float(default)
+
+    def s(key, default):           # string/choice param
+        v = p.get(key, default)
+        return str(v) if v is not None else default
+
+    if mode in (None, "", "task"):
+        argv = [py, "scripts/run_task.py", task, "--model", s("model", "haiku")]
+    elif mode == "learn":
+        argv = [py, "scripts/run_task.py", task,
+                "--model", s("model", "haiku"), "--loop",
+                "--max-episodes", str(i("max_episodes", 10)),
+                "--stringency", s("stringency", "loose")]
+    elif mode == "autoplay":
+        argv = [py, "scripts/auto_play.py",
+                "--episodes", str(i("episodes", 5)),
+                "--model", s("model", "haiku"), "--save-all"]
+    elif mode == "random":
+        argv = [py, "scripts/random_play.py",
+                "--episodes", str(i("episodes", 10)),
+                "--moves-per-episode", str(i("moves_per_episode", 8)),
+                "--save-all"]
+        if str(p.get("seed", "")).strip() != "":
+            argv += ["--seed", str(i("seed", 0))]
+    elif mode == "augment":
+        argv = [py, "scripts/run_task_augmented.py", task,
+                "--model", s("model", "haiku"),
+                "--cycles", str(i("cycles", 4)),
+                "--pos-jitter-mm", str(f("pos_jitter_mm", 20.0)),
+                "--rot-jitter-deg", str(f("rot_jitter_deg", 45.0)),
+                "--auto-accept-variants", "--no-annotate"]
+    elif mode == "vr":
+        argv = [py, "scripts/run_vr.py", "--mode", s("view", "mono")]
+    else:
+        raise ValueError(f"unknown mode: {mode!r}")
     return argv, str(LLM_DIR), {**os.environ}
 
 
+def task_cmd(task, model):
+    """Back-compat shim: the single-task path. New code uses build_cmd()."""
+    return build_cmd("task", task, {"model": model})
+
+
 # ---------------------------------------------------------------- log -> state
-# run_task.py prints a planned sequence of primitives and an execution trace.
-# We turn each line into a tag for the run log and sniff bench state out of it.
+# The twin's scripts print a planned sequence of primitives and an execution
+# trace; the multi-episode modes (auto-play, random play, augment, loop) add
+# their own [AutoPlay]/[RandomPlay]/[Augment]/Episode markers and a final
+# RUN SUMMARY. We turn each line into a colour tag for the run log and sniff
+# bench state out of it.
 _ARM_HINTS = re.compile(r"(pick|grasp|place|push|move|wave|rail|gripper)", re.I)
-_OK_HINTS = re.compile(r"(✓|\bok\b|success|complete|\[lessons\])", re.I)
-_ERR_HINTS = re.compile(r"(error|fail|traceback|exception|\bfault\b)", re.I)
-_PLAN_HINTS = re.compile(r"(plan|planned sequence|locate|grasp|dispatch)", re.I)
-# A saved session dir looks like  recordings/2026-06-08_20-42-33_session_f1f63877
-_SESS_RE = re.compile(r"recordings[/\\]([0-9A-Za-z_\-]+_session_[0-9A-Za-z]+)")
+_OK_HINTS = re.compile(
+    r"(✓|\bok\b|complete|\[lessons\]|\bsaved\b|improving|success=true)", re.I)
+_ERR_HINTS = re.compile(
+    r"(error|traceback|exception|\bfault\b|\bfail\b|success=false)", re.I)
+_PLAN_HINTS = re.compile(
+    r"(\[autoplay\]|\[randomplay\]|\[augment\]|\[task\]|\[llmbrain\]"
+    r"|episode\s+\d+|cycle\s+\d+|run id|generating|plan|planned sequence"
+    r"|locate|grasp|dispatch|physical outcome|outcome check|run summary"
+    r"|trend|workspace)", re.I)
+# A saved run is referenced either as a path  recordings/<ts>_session_<id>  or,
+# by the batch scripts, as  Saved: <ts>_session_<id>_ep1.
+_SESS_RE = re.compile(
+    r"(?:recordings[/\\]|saved:\s*)([0-9A-Za-z_\-]+_session_[0-9A-Za-z_]+)",
+    re.I)
 # Rail target shows up inside printed param dicts: {'position_mm': 0, ...}
 _RAIL_RE = re.compile(r"position_mm['\"]?\s*[:=]\s*(-?\d+(?:\.\d+)?)", re.I)
 
@@ -185,7 +381,7 @@ def classify_line(line):
 
     sess = _SESS_RE.search(line)
     if sess:
-        out["session_dir"] = sess.group(0)
+        out["session_dir"] = sess.group(1)
 
     return out
 

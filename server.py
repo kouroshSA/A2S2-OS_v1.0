@@ -14,12 +14,15 @@ beside it without touching this file (see README → "Adding an app").
 Endpoint contract (stable; consumed by index.html):
   GET  /                 -> the shell HTML
   GET  /index.html       -> the shell HTML
-  GET  /api/health       -> {ready, repo, llm_dir, ...} for the active app + OS info
+  GET  /api/health       -> {ready, repo, llm_dir, modes[], ...} active app + OS
   GET  /api/apps         -> [{id, name, ...}]  installed apps (the extension seam)
+  GET  /api/modes        -> active app's modes of operation (descriptors)
   GET  /api/library      -> active app's curated protocol list
   GET  /api/sessions     -> active app's saved runs, newest first
-  POST /api/run          -> {task, model} -> {job_id}
-  GET  /api/job/<id>     -> {status, log[], outcome, arm, rail, session_dir}
+  POST /api/run          -> {mode, task, params} -> {job_id}
+                            (legacy {task, model} still accepted -> task mode)
+  GET  /api/job/<id>     -> {status, log[], outcome, mode, arm, rail, session_dir}
+  POST /api/job/<id>/stop-> stop a running job (long-running modes, e.g. VR)
 
 Run on the lab machine that has the `xarm6sim` conda env active:
     conda activate xarm6sim
@@ -33,6 +36,7 @@ import importlib.util
 import json
 import os
 import shutil
+import signal
 import subprocess
 import threading
 import uuid
@@ -124,11 +128,41 @@ class App:
         fn = getattr(self.mod, "list_sessions", None)
         return fn() if fn else []
 
-    def task_cmd(self, task, model):
-        """Return (argv, cwd, env). cwd/env may be None. argv is wrapped with
-        `conda run -n <env>` when this app declares a conda_env and conda is
-        available (the app's own interpreter choice remains the fallback)."""
-        out = self.mod.task_cmd(task, model)
+    def modes(self):
+        """The app's modes of operation (descriptors the shell renders). Apps
+        that don't declare any get a single implicit task mode so the classic
+        {task, model} path still works."""
+        fn = getattr(self.mod, "modes", None)
+        if fn:
+            return list(fn() or [])
+        return [{
+            "id": "task", "name": "Run a task", "gallery": False,
+            "needs_task": True,
+            "params": [{"id": "model", "label": "Model", "type": "choice",
+                        "choices": self.manifest.get("models", ["haiku"]),
+                        "default": "haiku"}],
+        }]
+
+    def mode(self, mode_id):
+        """Look up a single mode descriptor by id (None if unknown)."""
+        for m in self.modes():
+            if m.get("id") == (mode_id or "task"):
+                return m
+        return None
+
+    def build_cmd(self, mode, task, params):
+        """Return (argv, cwd, env) for one run of `mode` with `params`.
+
+        Prefers the app's build_cmd(mode, task, params); falls back to the
+        legacy task_cmd(task, model) for apps that only know one mode. argv is
+        wrapped with `conda run -n <env>` when this app declares a conda_env and
+        conda is available (the app's own interpreter choice is the fallback)."""
+        fn = getattr(self.mod, "build_cmd", None)
+        if fn:
+            out = fn(mode, task, params or {})
+        else:
+            model = (params or {}).get("model", "haiku")
+            out = self.mod.task_cmd(task, model)
         if isinstance(out, tuple):
             argv = list(out[0])
             cwd = out[1] if len(out) > 1 else None
@@ -198,18 +232,21 @@ def set_active_app(app_id):
 
 
 # ---------------------------------------------------------------- job store
-JOBS = {}          # id -> dict(status, log[], outcome, model, task, arm, rail, session_dir)
+# A job runs one mode of operation. Some modes finish on their own (a task, a
+# fixed batch); others run until stopped (VR teleop). We keep the child Popen so
+# a long-running job can be terminated from the UI (POST /api/job/<id>/stop).
+JOBS = {}          # id -> dict(status, log[], outcome, mode, params, task, ...)
 JOBS_LOCK = threading.Lock()
 
 
 def _run_job(job_id, app):
     with JOBS_LOCK:
-        JOBS[job_id]["status"] = "running"
-        task = JOBS[job_id]["task"]
-        model = JOBS[job_id]["model"]
+        j = JOBS[job_id]
+        j["status"] = "running"
+        task = j["task"]; mode = j["mode"]; params = j["params"]
 
     try:
-        argv, cwd, env = app.task_cmd(task, model)
+        argv, cwd, env = app.build_cmd(mode, task, params)
     except Exception as e:
         with JOBS_LOCK:
             j = JOBS[job_id]
@@ -220,13 +257,17 @@ def _run_job(job_id, app):
     try:
         proc = subprocess.Popen(
             argv, cwd=cwd,
-            # No stdin: the twin's run_task.py ends with an interactive
-            # "Keep this recording? [Y/n]" prompt. With stdin detached the
+            # No stdin: the twin's scripts end with an interactive
+            # "Keep this recording? [Y/n]" prompt (and the batch modes are run
+            # with their own non-interactive flags). With stdin detached the
             # prompt reads EOF and keeps the recording — without this the child
             # would inherit the server's terminal and hang every run.
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1, env=env,
+            # Own process group so stop_job() can signal the whole tree —
+            # `conda run` spawns a grandchild that a plain terminate() misses.
+            start_new_session=True,
         )
     except (FileNotFoundError, OSError) as e:
         with JOBS_LOCK:
@@ -234,6 +275,9 @@ def _run_job(job_id, app):
             j["status"] = "error"; j["outcome"] = "error"
             j["log"].append({"k": "err", "t": f"Could not start task: {e}"})
         return
+
+    with JOBS_LOCK:
+        JOBS[job_id]["proc"] = proc
 
     for raw in iter(proc.stdout.readline, ""):
         line = raw.rstrip("\n")
@@ -259,18 +303,46 @@ def _run_job(job_id, app):
     with JOBS_LOCK:
         j = JOBS[job_id]
         j["arm"] = "idle"
-        j["status"] = "done" if rc == 0 else "error"
-        j["outcome"] = "success" if rc == 0 else "error"
+        if j.get("stopping"):
+            # User asked to stop — a non-zero rc here is expected, not a fault.
+            j["status"] = "stopped"; j["outcome"] = "stopped"
+        else:
+            j["status"] = "done" if rc == 0 else "error"
+            j["outcome"] = "success" if rc == 0 else "error"
 
 
-def start_job(task, model, app):
+def start_job(mode, task, params, app):
     job_id = uuid.uuid4().hex[:12]
+    model = (params or {}).get("model")
     with JOBS_LOCK:
         JOBS[job_id] = {"status": "queued", "log": [], "outcome": None,
-                        "model": model, "task": task, "arm": "idle",
-                        "rail": 0, "session_dir": None}
+                        "mode": mode, "params": params or {}, "task": task,
+                        "model": model, "arm": "idle", "rail": 0,
+                        "session_dir": None, "proc": None, "stopping": False}
     threading.Thread(target=_run_job, args=(job_id, app), daemon=True).start()
     return job_id
+
+
+def stop_job(job_id):
+    """Signal a running job's whole process group to terminate. Returns True if
+    the job exists. Idempotent — repeated calls escalate nothing here; the
+    child's own SIGTERM handling (or eventual exit) ends the run."""
+    with JOBS_LOCK:
+        j = JOBS.get(job_id)
+        if not j:
+            return False
+        j["stopping"] = True
+        proc = j.get("proc")
+        j["log"].append({"k": "", "t": "— stop requested —"})
+    if proc and proc.poll() is None:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+    return True
 
 
 # ---------------------------------------------------------------- composed responses
@@ -280,6 +352,9 @@ def health_payload():
     h["os"] = "A2S2-OS"
     h["apps"] = [a.manifest for a in APPS.values()]
     h["active_app"] = app.id if app else None
+    # Ship the active app's modes here too, so the shell can re-skin and rebuild
+    # its mode gallery in one round-trip on boot and on app switch.
+    h["modes"] = app.modes() if app else []
     return h
 
 
@@ -306,6 +381,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, health_payload())
         if p == "/api/apps":
             return self._send(200, [a.manifest for a in APPS.values()])
+        if p == "/api/modes":
+            app = active_app()
+            return self._send(200, app.modes() if app else [])
         if p == "/api/library":
             app = active_app()
             return self._send(200, app.library() if app else [])
@@ -320,7 +398,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, {"error": "no such job"})
             return self._send(200, {"status": j["status"], "log": j["log"],
                                     "outcome": j["outcome"], "arm": j.get("arm"),
-                                    "rail": j.get("rail"),
+                                    "rail": j.get("rail"), "mode": j.get("mode"),
                                     "session_dir": j.get("session_dir")})
         return self._send(404, {"error": "not found"})
 
@@ -345,17 +423,30 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(n) or b"{}")
             except Exception:
                 return self._send(400, {"error": "bad json"})
-            task = (body.get("task") or "").strip()
-            model = body.get("model") or "haiku"
-            if not task:
-                return self._send(400, {"error": "empty task"})
             app = active_app()
             if not app:
                 return self._send(409, {"error": "no app installed"})
+            mode = (body.get("mode") or "task").strip()
+            task = (body.get("task") or "").strip()
+            params = dict(body.get("params") or {})
+            # Back-compat: classic clients post {task, model} with no mode/params.
+            if "model" in body and "model" not in params:
+                params["model"] = body["model"]
+            desc = app.mode(mode)
+            if desc is None:
+                return self._send(400, {"error": "unknown mode", "mode": mode,
+                                        "modes": [m.get("id") for m in app.modes()]})
+            if desc.get("needs_task") and not task:
+                return self._send(400, {"error": "empty task"})
             h = app.health()
             if not h.get("ready", True):
                 return self._send(409, {"error": "app not ready", "health": h})
-            return self._send(200, {"job_id": start_job(task, model, app)})
+            return self._send(200, {"job_id": start_job(mode, task, params, app)})
+        if p.startswith("/api/job/") and p.endswith("/stop"):
+            jid = p[len("/api/job/"):-len("/stop")]
+            if stop_job(jid):
+                return self._send(200, {"stopped": jid})
+            return self._send(404, {"error": "no such job"})
         return self._send(404, {"error": "not found"})
 
 

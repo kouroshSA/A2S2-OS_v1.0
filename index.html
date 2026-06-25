@@ -79,7 +79,7 @@
 
   /* ---------- body ---------- */
   .body{flex:1;overflow:hidden;display:flex}
-  .home{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:18px;padding:22px}
+  .home{flex:1;display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:1fr;gap:18px;padding:22px}
   .tile{
     position:relative;border:1px solid var(--line);border-radius:var(--r);
     background:linear-gradient(160deg,var(--panel),var(--bench));
@@ -97,6 +97,7 @@
     opacity:.10;filter:blur(6px)}
   .tile.ask .accent{background:var(--go)}
   .tile.proto .accent{background:var(--green)}
+  .tile.modes .accent{background:var(--blue)}
   .tile.watch .accent{background:var(--blue)}
   .tile.samples .accent{background:var(--red)}
   .tile .badge{position:absolute;top:18px;right:18px;font-family:"IBM Plex Mono";font-size:12px;
@@ -146,6 +147,28 @@
   .card h3{font-family:"Space Grotesk";font-size:17px;font-weight:600}
   .card p{color:var(--muted);font-size:13.5px;line-height:1.5}
   .card .run-tag{font-family:"IBM Plex Mono";font-size:12px;color:var(--muted);margin-top:auto}
+  .card .tagline{font-family:"IBM Plex Mono";font-size:12px;color:var(--muted);margin-top:auto}
+
+  /* mode runner form */
+  .runner{max-width:760px;margin:0 auto}
+  .runner .lead{color:var(--muted);font-size:14.5px;line-height:1.6;margin-bottom:20px;max-width:62ch}
+  .runner .ask-box{border:1px solid var(--line);border-radius:var(--r);background:var(--panel);padding:18px;margin-bottom:18px}
+  .params{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px}
+  .pfield{display:flex;flex-direction:column;gap:8px}
+  .pfield > label{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  .pfield input[type=number]{background:var(--bench-2);border:1px solid var(--line);border-radius:10px;
+    color:var(--text);font-family:"IBM Plex Mono";font-size:15px;padding:10px 12px;outline:none;width:100%}
+  .pfield input[type=number]:focus{border-color:var(--line-2)}
+  .pchips{display:flex;flex-wrap:wrap;gap:6px}
+  .ptoggle{display:flex;align-items:center;gap:9px;cursor:pointer;font-size:14px;color:var(--text)}
+  .ptoggle input{width:18px;height:18px;accent-color:var(--go)}
+  .runner-go{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .runner-go .note{font-family:"IBM Plex Mono";font-size:12px;color:var(--muted-2)}
+  .stop{font-family:"Space Grotesk";font-weight:600;font-size:13px;background:transparent;color:var(--err);
+    border:1px solid var(--err);border-radius:10px;padding:9px 16px;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+  .stop:hover{background:rgba(229,72,77,.12)}
+  .mode-pill{font-family:"IBM Plex Mono";font-size:11px;color:var(--blue);border:1px solid var(--line);
+    border-radius:999px;padding:3px 10px;text-transform:uppercase;letter-spacing:.08em}
 
   /* watch */
   .watch{display:grid;grid-template-columns:1.3fr 1fr;gap:18px;height:100%}
@@ -246,11 +269,46 @@ const STATE = {
   model:'haiku',
   apps:[],             // installed app manifests (from /api/health)
   appId:null,          // active app id
-  jobs:[],              // {id, task, status, log[], outcome, model, started}
+  modes:[],            // operating-mode descriptors (from /api/health|modes)
+  runMode:null,        // mode id currently open in the runner form
+  jobs:[],              // {id, sid, mode, task, status, log[], outcome, model, started}
   sessions:[],
   busy:false,
   arm:'idle', rail:0
 };
+
+/* operating modes — overwritten by the server's app descriptors on boot.
+   This fallback keeps the demo bench feelable with no server at all. */
+const FALLBACK_MODES = [
+  {id:'task',name:'Ask the bench',gallery:false,needs_task:true,
+   params:[{id:'model',label:'Planner',type:'choice',choices:['haiku','sonnet'],default:'haiku'}]},
+  {id:'learn',name:'Self-learning loop',tagline:'Repeat one task and improve',accent:'#46C26A',
+   gallery:true,needs_task:true,task_hint:'e.g. Put the red cube in the red bin',
+   desc:'The bench attempts a single task many times, learning as it goes.',
+   params:[{id:'max_episodes',label:'Attempts',type:'int',default:10,min:2,max:50},
+           {id:'stringency',label:'Grading',type:'choice',choices:['loose','normal','strict'],default:'loose'},
+           {id:'model',label:'Planner',type:'choice',choices:['haiku','sonnet'],default:'haiku'}]},
+  {id:'autoplay',name:'Auto-play batch',tagline:'The bench invents and runs varied tasks',accent:'#4C8DFF',
+   gallery:true,needs_task:false,desc:'The bench writes a batch of diverse tasks and runs them back-to-back.',
+   params:[{id:'episodes',label:'Tasks',type:'int',default:5,min:1,max:50},
+           {id:'model',label:'Planner',type:'choice',choices:['haiku','sonnet'],default:'haiku'}]},
+  {id:'random',name:'Random play',tagline:'Generate training data — no planner',accent:'#E5484D',
+   gallery:true,needs_task:false,desc:'The arm samples random reachable poses with no language model in the loop.',
+   params:[{id:'episodes',label:'Runs',type:'int',default:10,min:1,max:200},
+           {id:'moves_per_episode',label:'Moves each',type:'int',default:8,min:1,max:40},
+           {id:'seed',label:'Seed',type:'int',default:'',min:0,max:999999,optional:true}]},
+  {id:'augment',name:'Augment a task',tagline:'Many variations of one task',accent:'#F2B23E',
+   gallery:true,needs_task:true,task_hint:'e.g. Put the red cube in the red bin',
+   desc:'Runs one task across several cycles, rewording it and nudging object positions each time.',
+   params:[{id:'cycles',label:'Cycles',type:'int',default:4,min:2,max:30},
+           {id:'pos_jitter_mm',label:'Position jitter (mm)',type:'int',default:20,min:0,max:100},
+           {id:'rot_jitter_deg',label:'Rotation jitter (deg)',type:'int',default:45,min:0,max:180},
+           {id:'model',label:'Planner',type:'choice',choices:['haiku','sonnet'],default:'haiku'}]},
+  {id:'vr',name:'VR teleoperation',tagline:'Hand-guide the bench from a headset',accent:'#4C8DFF',
+   gallery:true,needs_task:false,long_running:true,
+   desc:'Starts the VR teleoperation server so you can drive the bench by hand and record demonstrations.',
+   params:[{id:'view',label:'View',type:'choice',choices:['mono','stereo'],default:'mono'}]},
+];
 
 /* curated protocol library — built from the scene's own objects */
 const LIBRARY = [
@@ -281,7 +339,8 @@ async function boot(){
     STATE._health = h;
     STATE.apps = Array.isArray(h.apps) ? h.apps : [];
     STATE.appId = h.active_app || (STATE.apps[0] && STATE.apps[0].id) || null;
-  }catch{ STATE.mode='demo'; }
+    STATE.modes = (Array.isArray(h.modes) && h.modes.length) ? h.modes : FALLBACK_MODES;
+  }catch{ STATE.mode='demo'; STATE.modes=FALLBACK_MODES; }
   setConn();
   renderAppSwitcher(); applyAppIdentity();
   try{ const lib = await api('/api/library'); if(Array.isArray(lib)&&lib.length) LIBRARY.splice(0,LIBRARY.length,...lib);}catch{}
@@ -323,6 +382,8 @@ async function switchApp(id){
   }catch(e){ renderAppSwitcher(); return; }   // revert <select> on failure
   STATE._health=h; STATE.mode=h.ready?'live':'demo';
   STATE.appId=h.active_app||id; STATE.apps=Array.isArray(h.apps)?h.apps:STATE.apps;
+  STATE.modes=(Array.isArray(h.modes)&&h.modes.length)?h.modes:FALLBACK_MODES;
+  STATE.runMode=null;
   // reload the now-active app's library + saved runs; clear this session's jobs
   try{ const lib=await api('/api/library'); LIBRARY.splice(0,LIBRARY.length,...(Array.isArray(lib)?lib:[])); }
   catch{ LIBRARY.splice(0,LIBRARY.length); }
@@ -394,11 +455,13 @@ function render(){
   body.innerHTML = viewShell(STATE.view);
   if(STATE.view==='ask') wireAsk();
   if(STATE.view==='watch') renderWatch();
+  if(STATE.view==='runmode') wireRunMode();
 }
 
 function homeView(){
   const running = STATE.jobs.filter(j=>j.status==='running').length;
   const done = STATE.mode==='live'? STATE.sessions.length : STATE.jobs.filter(j=>j.status==='done').length;
+  const galleryModes = STATE.modes.filter(m=>m.gallery);
   return `<div class="home">
     <div class="tile ask" onclick="go('ask')"><div class="accent"></div>
       <div class="ico">${ICO.ask}</div>
@@ -408,6 +471,11 @@ function homeView(){
       <span class="badge">${LIBRARY.length} ready</span>
       <div class="ico">${ICO.proto}</div>
       <div><h2>Run a protocol</h2><p>Pick a saved task from the library and press go. No typing needed.</p></div>
+    </div>
+    <div class="tile modes" onclick="go('modes')"><div class="accent"></div>
+      <span class="badge">${galleryModes.length} mode${galleryModes.length===1?'':'s'}</span>
+      <div class="ico">${ICO.modes}</div>
+      <div><h2>Lab modes</h2><p>Beyond one task: self-learning loops, auto-play batches, random-play data runs, task augmentation and VR teleoperation.</p></div>
     </div>
     <div class="tile watch" onclick="go('watch')"><div class="accent"></div>
       <span class="badge">${running?running+' running':'idle'}</span>
@@ -423,15 +491,28 @@ function homeView(){
 }
 
 const TITLES={ask:['Ask the bench','say it in plain words'],library:['Run a protocol','pick a saved task'],
-  watch:['Watch','live bench &amp; queue'],samples:['My samples & results','saved runs']};
+  modes:['Lab modes','ways to run the bench'],watch:['Watch','live bench &amp; queue'],
+  samples:['My samples & results','saved runs']};
 function viewShell(v){
+  if(v==='runmode'){
+    const m=currentMode()||{};
+    const [t,s]=[esc(m.name||'Run'),esc(m.tagline||'')];
+    const back=`onclick="go('modes')"`;
+    return `<div class="view">
+      <div class="view-head">
+        <button class="back" ${back} aria-label="Back to modes">‹</button>
+        <h2>${t}</h2><span class="sub">${s}</span>
+      </div>
+      <div class="view-body" id="vbody">${runModeView()}</div>
+    </div>`;
+  }
   const [t,s]=TITLES[v];
   return `<div class="view">
     <div class="view-head">
       <button class="back" onclick="go('home')" aria-label="Back to home">‹</button>
       <h2>${t}</h2><span class="sub">${s}</span>
     </div>
-    <div class="view-body" id="vbody">${{ask:askView,library:libView,watch:watchView,samples:samplesView}[v]()}</div>
+    <div class="view-body" id="vbody">${{ask:askView,library:libView,modes:modesView,watch:watchView,samples:samplesView}[v]()}</div>
   </div>`;
 }
 
@@ -476,8 +557,104 @@ function libView(){
 /* delegate clicks for cards/suggestions after render */
 document.addEventListener('click',e=>{
   const card=e.target.closest('.card[data-task]');
-  if(card) submit(card.dataset.task);
+  if(card){ submit(card.dataset.task); return; }
+  const mcard=e.target.closest('.card[data-mode]');
+  if(mcard) openMode(mcard.dataset.mode);
 });
+
+/* ---- LAB MODES ---- */
+function currentMode(){ return STATE.modes.find(m=>m.id===STATE.runMode)||null; }
+function openMode(id){ STATE.runMode=id; STATE.view='runmode'; render(); }
+
+function modesView(){
+  const gallery=STATE.modes.filter(m=>m.gallery);
+  if(!gallery.length) return `<div class="empty"><div class="e-card">
+    <h3>No extra modes</h3><p>This app exposes a single way to run. Use “Ask the bench”.</p></div></div>`;
+  const accentClass=a=>({'#46C26A':'green','#4C8DFF':'blue','#E5484D':'red','#F2B23E':'amber'}[a]||'amber');
+  return `<div class="lib">${gallery.map(m=>`
+    <div class="card ${accentClass(m.accent)}" data-mode="${esc(m.id)}">
+      <div class="swatch"></div>
+      <h3>${esc(m.name)}</h3>
+      <p>${esc(m.desc||m.tagline||'')}</p>
+      <div class="tagline">${esc(m.tagline||'')}${m.long_running?' · runs until stopped':''}</div>
+    </div>`).join('')}</div>`;
+}
+
+/* generic parameter form built from a mode's descriptor */
+function pInputId(mode,pid){ return `p_${mode}_${pid}`; }
+function paramField(mode,p){
+  const id=pInputId(mode.id,p.id);
+  if(p.type==='choice'){
+    const chips=(p.choices||[]).map(c=>
+      `<span class="chip" data-pid="${esc(p.id)}" data-val="${esc(c)}">${esc(c)}</span>`).join('');
+    return `<div class="pfield" data-field="${esc(p.id)}" data-default="${esc(p.default)}">
+      <label>${esc(p.label||p.id)}</label><div class="pchips" id="${id}">${chips}</div></div>`;
+  }
+  if(p.type==='bool'){
+    return `<div class="pfield"><label class="ptoggle">
+      <input type="checkbox" id="${id}" ${p.default?'checked':''}/> ${esc(p.label||p.id)}</label></div>`;
+  }
+  // int (default)
+  const min=(p.min!=null)?`min="${p.min}"`:'';
+  const max=(p.max!=null)?`max="${p.max}"`:'';
+  const val=(p.default===''||p.default==null)?'':p.default;
+  const ph=p.optional?'optional':'';
+  return `<div class="pfield"><label>${esc(p.label||p.id)}</label>
+    <input type="number" id="${id}" value="${esc(val)}" ${min} ${max} placeholder="${ph}"/></div>`;
+}
+
+function runModeView(){
+  const m=currentMode(); if(!m) return '';
+  const taskBox=m.needs_task?`<div class="ask-box">
+    <textarea id="task" placeholder="${esc(m.task_hint||'Describe the task in plain words')}"></textarea>
+  </div>`:'';
+  const params=(m.params||[]).map(p=>paramField(m,p)).join('');
+  const goLabel=m.long_running?'Start':'Run on the bench';
+  return `<div class="runner">
+    <p class="lead">${esc(m.desc||'')}</p>
+    ${taskBox}
+    ${params?`<div class="params">${params}</div>`:''}
+    <div class="runner-go">
+      <span class="note">${m.long_running?'Runs until you press Stop in Watch.':'Saved to “My samples &amp; results”.'}</span>
+      <button class="go" id="runBtn">${ICO.play}<span>${goLabel}</span></button>
+    </div>
+  </div>`;
+}
+
+function wireRunMode(){
+  const m=currentMode(); if(!m) return;
+  // choice chips: reflect default selection + click to choose
+  (m.params||[]).filter(p=>p.type==='choice').forEach(p=>{
+    const box=document.getElementById(pInputId(m.id,p.id)); if(!box) return;
+    const def=p.default;
+    box.querySelectorAll('.chip').forEach(c=>{
+      if(c.dataset.val===String(def)) c.classList.add('on');
+      c.onclick=()=>{ box.querySelectorAll('.chip').forEach(x=>x.classList.remove('on')); c.classList.add('on'); };
+    });
+  });
+  document.getElementById('runBtn').onclick=()=>{
+    const task=m.needs_task?(document.getElementById('task').value.trim()):'';
+    if(m.needs_task && !task){ const ta=document.getElementById('task'); if(ta) ta.focus(); return; }
+    submitRun(m, task, collectParams(m));
+  };
+}
+
+function collectParams(m){
+  const out={};
+  (m.params||[]).forEach(p=>{
+    const id=pInputId(m.id,p.id);
+    if(p.type==='choice'){
+      const box=document.getElementById(id); const on=box&&box.querySelector('.chip.on');
+      out[p.id]=on?on.dataset.val:p.default;
+    }else if(p.type==='bool'){
+      const el=document.getElementById(id); out[p.id]=!!(el&&el.checked);
+    }else{
+      const el=document.getElementById(id); const v=el?el.value.trim():'';
+      out[p.id]=v;   // server tolerates blanks/strings and clamps to defaults
+    }
+  });
+  return out;
+}
 
 /* ---- WATCH ---- */
 function watchView(){ return `<div id="watchMount" style="height:100%"></div>`; }
@@ -496,7 +673,12 @@ function renderWatch(){
     </div>
     <div style="display:flex;flex-direction:column;gap:14px;min-height:0">
       <div class="readout" style="flex:1;min-height:0">
-        <div class="r-bar"><span>Run log</span><span>${active?esc(active.model):''}</span></div>
+        <div class="r-bar">
+          <span>Run log${active&&active.modeName&&active.mode!=='task'?' · <span class="mode-pill">'+esc(active.modeName)+'</span>':''}</span>
+          <span style="display:flex;align-items:center;gap:10px">${active?esc(active.model||''):''}
+            ${active&&active.status==='running'&&(active.sid||STATE.mode==='demo')?`<button class="stop" id="stopBtn">${ICO.stop}<span>Stop</span></button>`:''}
+          </span>
+        </div>
         <div class="log" id="logBox">${logHtml}</div>
       </div>
       <div class="queue">
@@ -507,6 +689,8 @@ function renderWatch(){
     </div>
   </div>`;
   const lb=document.getElementById('logBox'); if(lb) lb.scrollTop=lb.scrollHeight;
+  const sb=document.getElementById('stopBtn');
+  if(sb) sb.onclick=()=>{ if(active&&active.sid) stopJob(active); else if(active){ active.stopping=true; } sb.disabled=true; sb.querySelector('span').textContent='Stopping…'; };
 }
 function qItem(j){
   const cls={running:'q-running',done:'q-done',error:'q-err',queued:'q-queued'}[j.status]||'q-queued';
@@ -539,34 +723,50 @@ function samplesView(){
 }
 
 /* ---------------- run a task (live or demo) ---------------- */
-async function submit(task){
+/* the "Ask"/protocol path: a single task in the default task mode */
+function submit(task){
+  const m=STATE.modes.find(x=>x.id==='task')||{id:'task',needs_task:true};
+  return submitRun(m, task, {model:STATE.model});
+}
+
+async function submitRun(mode, task, params){
   if(STATE.busy) return;
   STATE.busy=true;
-  const job={id:'j'+Date.now(), task, model:STATE.model, status:'running', log:[], started:new Date().toISOString(), outcome:null};
+  const job={id:'j'+Date.now(), sid:null, mode:mode.id, modeName:mode.name,
+    longRunning:!!mode.long_running, task:task||mode.name, model:(params&&params.model)||null,
+    params:params||{}, status:'running', log:[], started:new Date().toISOString(), outcome:null};
   STATE.jobs.push(job);
   go('watch');
-  if(STATE.mode==='live') await runLive(job); else await runDemo(job);
+  if(STATE.mode==='live') await runLive(job); else await runDemo(job, mode);
   STATE.busy=false;
   STATE.arm='idle'; drawBench();
   if(STATE.view==='watch') renderWatch();
   refreshSessions();
 }
 
+async function stopJob(job){
+  if(!job||!job.sid) return;
+  job.stopping=true;
+  try{ await api('/api/job/'+job.sid+'/stop',{method:'POST'},5000);}catch{}
+  if(STATE.view==='watch') renderWatch();
+}
+
 async function runLive(job){
   try{
     const res=await api('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({task:job.task,model:job.model})}, 6000);
-    const id=res.job_id;
+      body:JSON.stringify({mode:job.mode,task:job.task,params:job.params})}, 6000);
+    job.sid=res.job_id;
+    if(STATE.view==='watch') renderWatch();   // surface Stop as soon as it's running
     // poll
     while(true){
       await sleep(900);
-      let st; try{ st=await api('/api/job/'+id,{},5000);}catch{ break; }
+      let st; try{ st=await api('/api/job/'+job.sid,{},5000);}catch{ break; }
       job.log = (st.log||[]).map(coerceLine);
       if(st.arm!=null){STATE.arm=st.arm;} if(st.rail!=null){STATE.rail=st.rail;}
       animateFromTask(job.task);
       if(STATE.view==='watch') renderWatch();
-      if(st.status==='done'||st.status==='error'){
-        job.status=st.status; job.outcome=st.outcome||(st.status==='error'?'error':'ok'); break;
+      if(st.status==='done'||st.status==='error'||st.status==='stopped'){
+        job.status=st.status; job.outcome=st.outcome||(st.status==='error'?'error':st.status); break;
       }
     }
   }catch(e){
@@ -575,27 +775,66 @@ async function runLive(job){
   }
 }
 
-/* demo: plausible plan/dispatch so the console is feelable without the sim */
-async function runDemo(job){
-  const color=(job.task.match(/red|green|blue/i)||['blue'])[0].toLowerCase();
-  const steps=[
-    {k:'dim',t:`$ run_task "${job.task}" --model ${job.model}`},
-    {k:'',t:'Planning task…'},
-    {k:'plan',t:`plan: locate ${color}_cube → grasp → carry → release over ${color}_bin`},
-    {k:'',t:'Dispatching to bench…'},
-    {k:'',t:`move_rail → ${color} zone`,_arm:'moving',_rail:color==='red'?120:color==='green'?180:240},
-    {k:'',t:`pick_object(${color}_cube)`,_arm:`grasp ${color}`},
-    {k:'',t:`place_object(${color}_bin)`,_arm:`place ${color}`},
-    {k:'ok',t:'✓ task complete · outcome: success'},
-    {k:'dim',t:'saved → recordings/'+ts()+'_session_'+Math.floor(Math.random()*900+100)+'/'}
-  ];
+/* demo: plausible traces per mode so the console is feelable without the sim */
+async function runDemo(job, mode){
+  const steps=DEMO_STEPS(mode||{id:job.mode}, job);
   for(const st of steps){
-    await sleep(620+Math.random()*420);
+    if(job.stopping){ job.log.push({k:'',t:'— stopped —'}); job.status='stopped'; job.outcome='stopped'; return; }
+    await sleep(520+Math.random()*420);
     job.log.push({k:st.k,t:st.t});
     if(st._arm){STATE.arm=st._arm;} if(st._rail!=null){STATE.rail=st._rail;}
-    drawBench(color); if(STATE.view==='watch') renderWatch();
+    drawBench(st._hl); if(STATE.view==='watch') renderWatch();
   }
   job.status='done'; job.outcome='success';
+}
+
+function DEMO_STEPS(mode, job){
+  const p=job.params||{}; const color=(String(job.task).match(/red|green|blue/i)||['blue'])[0].toLowerCase();
+  const zone=c=>c==='red'?120:c==='green'?180:240;
+  const sess=()=>'recordings/'+ts()+'_session_'+Math.floor(Math.random()*900+100);
+  const one=(c,ep)=>[
+    {k:'plan',t:`plan: locate ${c}_cube → grasp → carry → release over ${c}_bin`},
+    {k:'',t:`move_rail → ${c} zone`,_arm:'moving',_rail:zone(c),_hl:c},
+    {k:'',t:`pick_object(${c}_cube)`,_arm:`grasp ${c}`,_hl:c},
+    {k:'',t:`place_object(${c}_bin)`,_arm:`place ${c}`,_hl:c},
+    {k:'ok',t:`✓ ${ep||'task'} complete · outcome: success`},
+  ];
+  switch(mode.id){
+    case 'learn':{
+      const n=Math.min(parseInt(p.max_episodes)||4,6); let s=[{k:'dim',t:`$ self-learning loop · "${job.task}" · ${n} attempts`}];
+      for(let i=1;i<=n;i++){ s.push({k:'plan',t:`Episode ${i}/${n}`}); s.push(...one(color,`episode ${i}`)); }
+      s.push({k:'ok',t:`RUN SUMMARY · success ${Math.ceil(n/2)+1}/${n} · Trend: IMPROVING`});
+      return s; }
+    case 'autoplay':{
+      const n=Math.min(parseInt(p.episodes)||3,5); const tasks=['Put the red cube in the blue bin','Rack a Falcon tube','Push the green cube off the bench','Sort the cubes by colour','Place the blue cube in the green bin'];
+      let s=[{k:'plan',t:`[AutoPlay] Generating ${n} diverse tasks…`}];
+      for(let i=1;i<=n;i++){ const c=['red','green','blue'][i%3]; s.push({k:'plan',t:`Episode ${i}/${n}: ${tasks[i-1]||'task'}`}); s.push(...one(c,`ep ${i}`)); s.push({k:'ok',t:`Saved: ${ts()}_session_auto_ep${i}`}); }
+      s.push({k:'ok',t:`[AutoPlay] Done. ${n} episodes saved.`});
+      return s; }
+    case 'random':{
+      const n=Math.min(parseInt(p.episodes)||3,4), mv=Math.min(parseInt(p.moves_per_episode)||4,6);
+      let s=[{k:'plan',t:`[RandomPlay] ${n} runs × ${mv} moves · no planner`},{k:'plan',t:'[RandomPlay] sampling reachable poses…'}];
+      for(let i=1;i<=n;i++){ s.push({k:'plan',t:`Episode ${i}/${n}`});
+        for(let k=1;k<=mv;k++) s.push({k:'',t:`  move ${k}: OK`,_arm:'moving',_rail:80+Math.floor(Math.random()*540)});
+        s.push({k:'ok',t:`Saved: ${ts()}_session_rand_ep${i}`}); }
+      s.push({k:'ok',t:`[RandomPlay] Done. ${n} runs saved.`});
+      return s; }
+    case 'augment':{
+      const n=Math.min(parseInt(p.cycles)||3,5);
+      let s=[{k:'plan',t:`[Augment] ${n} cycles · ±${p.pos_jitter_mm||20}mm / ±${p.rot_jitter_deg||45}°`}];
+      for(let i=1;i<=n;i++){ s.push({k:'plan',t:`[Cycle ${i}] ${i===1?'original prompt':'paraphrase + jitter'}`}); s.push(...one(color,`cycle ${i}`)); }
+      s.push({k:'ok',t:`OK ${n} sessions saved.`});
+      return s; }
+    case 'vr':
+      return [{k:'plan',t:'[VR] building twin (headless)…'},
+        {k:'plan',t:`[VR] mode=${p.view||'mono'} · record=on`},
+        {k:'ok',t:'[VR] Open on the headset: https://<lab-ip>:8443'},
+        {k:'',t:'[VR] waiting for headset… press Stop here when finished',_arm:'idle'},
+        {k:'',t:'[VR] (demo) idle — no headset connected'}];
+    default:
+      return [{k:'dim',t:`$ run_task "${job.task}" --model ${job.model||'haiku'}`},
+        {k:'',t:'Planning task…'},...one(color),{k:'dim',t:'saved → '+sess()+'/'}];
+  }
 }
 
 function animateFromTask(task){
@@ -618,7 +857,9 @@ const ICO={
   proto:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#46C26A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>`,
   watch:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4C8DFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>`,
   samples:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#E5484D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v7l-5 8a2 2 0 0 0 1.7 3h12.6a2 2 0 0 0 1.7-3l-5-8V3"/><path d="M7.5 3h9"/></svg>`,
-  play:`<svg width="16" height="16" viewBox="0 0 24 24" fill="#1A1305"><path d="M8 5v14l11-7z"/></svg>`
+  modes:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4C8DFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3.2"/></svg>`,
+  play:`<svg width="16" height="16" viewBox="0 0 24 24" fill="#1A1305"><path d="M8 5v14l11-7z"/></svg>`,
+  stop:`<svg width="13" height="13" viewBox="0 0 24 24" fill="#E5484D"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`
 };
 
 boot();

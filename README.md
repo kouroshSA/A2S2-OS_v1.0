@@ -127,6 +127,34 @@ regardless of which env launched `server.py`. Notes:
 
 ---
 
+## Modes of operation
+
+A single task is only one way to drive the twin. The Bench Console surfaces the
+twin's **major modes of operation** as a gallery behind the **Lab modes** home
+tile — each is a card with a small parameter form and a **Run** button. The home
+tiles **Ask the bench** and **Run a protocol** remain quick paths to the plain
+single-task mode.
+
+| Mode | Twin script | What it does |
+|---|---|---|
+| **Ask the bench** (`task`) | `run_task.py` | Plan and run one task once. |
+| **Self-learning loop** (`learn`) | `run_task.py --loop` | Attempt one task many times, reusing what worked and turning failures into constraints; ends with an improvement summary. |
+| **Auto-play batch** (`autoplay`) | `auto_play.py` | The bench invents a batch of diverse tasks and runs them back-to-back; a review is written at the end. |
+| **Random play** (`random`) | `random_play.py` | Sample random reachable poses with no planner — fast trajectory-data generation. |
+| **Augment a task** (`augment`) | `run_task_augmented.py` | Run one task across cycles, rewording it and jittering object poses to build a small varied dataset. |
+| **VR teleoperation** (`vr`) | `run_vr.py` | Start the VR teleop server; drive the bench by hand from a headset and record demos. **Long-running** — press **Stop** in **Watch** to end it. |
+
+Each mode maps to its script + flags in **one place**: the `MODES` list and the
+`build_cmd(mode, task, params)` function in `apps/bench_console/app.py`. The
+server and shell are generic — they render whatever modes the active app
+declares (via `/api/modes`) and post `{mode, task, params}` to `/api/run`. The
+batch modes are launched with their non-interactive flags (`--save-all`,
+`--auto-accept-variants`, `--no-annotate`) because the OS detaches child stdin.
+Long-running modes are terminated by `POST /api/job/<id>/stop`, which signals the
+child's whole process group (so the `conda run` grandchild dies too).
+
+---
+
 ## Pointing it at the twin
 
 On startup the bench app resolves where the xArm6 twin lives and prints it:
@@ -211,16 +239,18 @@ cross-platform and would serve it unchanged.
 | Method | Path | Returns |
 |---|---|---|
 | GET | `/`, `/index.html` | the shell HTML |
-| GET | `/api/health` | `{ready, repo, llm_dir, llm_dir_found, api_key_present, apps, active_app}` |
+| GET | `/api/health` | `{ready, repo, llm_dir, llm_dir_found, api_key_present, apps, active_app, modes}` |
 | GET | `/api/apps` | installed apps (the extension seam) |
+| GET | `/api/modes` | active app's modes of operation (descriptors) |
 | GET | `/api/library` | active app's curated protocol list |
 | GET | `/api/sessions` | active app's saved runs, newest first (cap 80) |
-| POST | `/api/run` | `{task, model}` → `{job_id}` |
+| POST | `/api/run` | `{mode, task, params}` → `{job_id}` (legacy `{task, model}` still accepted → task mode) |
 | POST | `/api/active` | `{app}` → health payload; switches the active app |
-| GET | `/api/job/<id>` | `{status, log[], outcome, arm, rail, session_dir}` |
+| GET | `/api/job/<id>` | `{status, log[], outcome, mode, arm, rail, session_dir}` |
+| POST | `/api/job/<id>/stop` | stop a running job (the long-running modes, e.g. VR) |
 
-`status`: `queued → running → done|error`. `outcome`: `success|error` from the
-task's exit code.
+`status`: `queued → running → done|error|stopped`. `outcome`: `success|error`
+from the task's exit code, or `stopped` when the user ends a long-running mode.
 
 ---
 
@@ -237,6 +267,10 @@ Live (env `xarm6sim` active, `.env` key present, on a machine with a display):
 5. A new run appears under **My samples & results** with its model, outcome and
    saved files (`metadata.json`, `trajectory.h5`, …).
 6. Repeat via **Ask the bench** with free text ("Put the red cube in the red bin").
+7. **Lab modes → Random play** (Runs 2, Moves 4) → the run log streams
+   `[RandomPlay]` lines and two sessions land under **My samples & results**.
+   Start **VR teleoperation** → the log shows the headset address and a **Stop**
+   button appears in **Watch**; pressing it ends the run (`status: stopped`).
 
 Headless smoke shape (works against any stub command):
 `GET /api/health` → `POST /api/run` → poll `GET /api/job/<id>` until `done` →
@@ -259,9 +293,16 @@ def library():      ...   # [ {color,title,task,desc}, ... ]   curated protocols
 def list_sessions():...   # [ {label,model,outcome,time,files}, ... ]  newest first
 def task_cmd(task, model):  ...   # -> (argv, cwd, env)   how one task runs
 def classify_line(line):    ...   # -> {k, arm, rail, session_dir}   log line -> state
+
+# optional — expose multiple modes of operation (see Bench Console):
+def modes():        ...   # [ {id,name,gallery,needs_task,params,...}, ... ]
+def build_cmd(mode, task, params):  ...   # -> (argv, cwd, env)  per-mode command
 ```
 
-Only `task_cmd` is required; the OS fills in safe defaults for the rest. Set
+Only `task_cmd` is required; the OS fills in safe defaults for the rest. An app
+that declares `modes()` + `build_cmd()` gets the **Lab modes** gallery and a
+generated parameter form per mode for free; an app that defines only `task_cmd`
+runs as a single implicit task mode. Set
 `conda_env` in the MANIFEST to have the OS run the app's tasks via
 `conda run -n <env>` (see [Apps & environments](#apps--environments)); omit it
 to run with whatever interpreter `task_cmd()` returns. The app starts active if
