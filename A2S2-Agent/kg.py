@@ -21,6 +21,14 @@ class KG:
     @property
     def data(self) -> dict:
         if self._data is None:
+            # Self-seed: rebuild kg.json if an OS app was added/removed/edited
+            # since it was last built, so the agent always reflects the current
+            # catalog without anyone running kg_build by hand.
+            try:
+                import kg_build
+                kg_build.ensure_fresh()
+            except Exception:
+                pass  # fall back to whatever kg.json exists
             if not self.path.is_file():
                 raise FileNotFoundError(
                     f"{self.path} not found. Run `python kg_build.py` to seed it."

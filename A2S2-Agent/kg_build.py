@@ -21,8 +21,14 @@ import importlib.util
 import io
 import json
 import os
+import re
+import shutil
 import sys
 from pathlib import Path
+
+# Per-invocation run dir some apps create in task_cmd (e.g. ppiGPLM/ppiBTEP).
+# We must not leave these behind when merely *resolving* the command for the KG.
+_RUNDIR_RE = re.compile(r"(.*/a2s2_runs/[0-9A-Za-z_\-]+_run_[0-9A-Za-z]+)")
 
 HERE = Path(__file__).resolve().parent
 OS_ROOT = HERE.parent                     # A2S2-Agent lives inside the OS repo
@@ -87,11 +93,34 @@ def _clean_cmd(argv) -> str:
     out = []
     for p in parts:
         p = str(p)
+        # collapse volatile per-run dirs to a stable placeholder
+        m = _RUNDIR_RE.search(p)
+        if m:
+            p = p.replace(m.group(1), "<run_dir>")
         # show only the script's repo-relative tail, not absolute paths
-        if p.endswith(".py") and "/" in p:
+        elif p.endswith(".py") and "/" in p:
             p = ".../" + "/".join(p.rsplit("/", 2)[-2:])
         out.append(p)
     return " ".join(out)
+
+
+def _cleanup_run_artifacts(argv):
+    """Remove any a2s2_runs/<id> dir an app's task_cmd created as a side effect
+    of being called purely to resolve its command for the KG."""
+    seen = set()
+    for a in argv or []:
+        m = _RUNDIR_RE.search(str(a))
+        if not m or m.group(1) in seen:
+            continue
+        seen.add(m.group(1))
+        with contextlib.suppress(OSError):
+            d = Path(m.group(1))
+            if d.is_dir():
+                shutil.rmtree(d, ignore_errors=True)
+            # also drop the a2s2_runs/ parent if our cleanup left it empty
+            parent = d.parent
+            if parent.name == "a2s2_runs" and parent.is_dir() and not any(parent.iterdir()):
+                parent.rmdir()
 
 
 def _script_of(argv) -> str | None:
@@ -122,6 +151,7 @@ def _mode_command(module, mode: dict) -> dict:
                 return info
         info["script"] = _script_of(argv)
         info["command_template"] = _clean_cmd(argv)
+        _cleanup_run_artifacts(argv)   # don't leave a run dir behind
     except Exception as e:
         info["command_template"] = f"(unresolved: {type(e).__name__})"
     return info
@@ -204,6 +234,36 @@ def build_kg() -> dict:
         },
         "apps": apps_out,
     }
+
+
+def is_stale() -> bool:
+    """True if kg.json is missing or older than the app sources — i.e. an app
+    was added, removed, or edited since the KG was last built. The apps/ dir's
+    own mtime changes when a sub-app is added/removed; each app.py's mtime
+    changes on edit, so both new apps and edits are caught."""
+    if not KG_PATH.is_file():
+        return True
+    try:
+        kg_m = KG_PATH.stat().st_mtime
+        if APPS_DIR.stat().st_mtime > kg_m:          # app added/removed
+            return True
+        for d in _discover_app_dirs():
+            if (d / "app.py").stat().st_mtime > kg_m:  # app edited
+                return True
+    except OSError:
+        return True
+    return False
+
+
+def ensure_fresh() -> bool:
+    """Rebuild kg.json if stale. Returns True if it rebuilt. This is what lets
+    the agent self-seed: any consumer that reads the KG calls this first, so a
+    newly added OS app shows up without anyone running kg_build by hand."""
+    if not is_stale():
+        return False
+    kg = build_kg()
+    KG_PATH.write_text(json.dumps(kg, indent=2))
+    return True
 
 
 def main():
