@@ -373,6 +373,17 @@ function applyAppIdentity(){
   if(a&&small) small.textContent=a.name||a.tagline||'Lab OS';
   if(a) document.title='Lab OS — '+(a.name||a.id);
 }
+// Per-app wording for the single-task "Ask" surface; bench defaults when the
+// active app doesn't override them (manifest ask_* fields).
+function askLabels(){
+  const a=STATE.apps.find(x=>x.id===STATE.appId)||{};
+  return {
+    title: a.ask_title||'Ask the bench',
+    blurb: a.ask_blurb||'Say what you want in plain words — "put the green cube in the green bin." The bench plans it and runs it.',
+    placeholder: a.ask_placeholder||'e.g. Put the green cube in the green bin',
+    button: a.ask_button||'Run on the bench',
+  };
+}
 async function switchApp(id){
   if(!id||id===STATE.appId) return;
   let h;
@@ -462,10 +473,11 @@ function homeView(){
   const running = STATE.jobs.filter(j=>j.status==='running').length;
   const done = STATE.mode==='live'? STATE.sessions.length : STATE.jobs.filter(j=>j.status==='done').length;
   const galleryModes = STATE.modes.filter(m=>m.gallery);
+  const AL = askLabels();
   return `<div class="home">
     <div class="tile ask" onclick="go('ask')"><div class="accent"></div>
       <div class="ico">${ICO.ask}</div>
-      <div><h2>Ask the bench</h2><p>Say what you want in plain words — "put the green cube in the green bin." The bench plans it and runs it.</p></div>
+      <div><h2>${esc(AL.title)}</h2><p>${esc(AL.blurb)}</p></div>
     </div>
     <div class="tile proto" onclick="go('library')"><div class="accent"></div>
       <span class="badge">${LIBRARY.length} ready</span>
@@ -506,7 +518,8 @@ function viewShell(v){
       <div class="view-body" id="vbody">${runModeView()}</div>
     </div>`;
   }
-  const [t,s]=TITLES[v];
+  let [t,s]=TITLES[v];
+  if(v==='ask'){ t=esc(askLabels().title); }   // per-app label
   return `<div class="view">
     <div class="view-head">
       <button class="back" onclick="go('home')" aria-label="Back to home">‹</button>
@@ -518,15 +531,16 @@ function viewShell(v){
 
 /* ---- ASK ---- */
 function askView(){
+  const AL = askLabels();
   return `<div class="ask-wrap">
     <div class="ask-box">
-      <textarea id="task" placeholder="e.g. Put the green cube in the green bin"></textarea>
+      <textarea id="task" placeholder="${esc(AL.placeholder)}"></textarea>
       <div class="ask-row">
         <div class="model-pick">
           <span class="chip ${STATE.model==='haiku'?'on':''}" data-m="haiku">haiku · fast</span>
           <span class="chip ${STATE.model==='sonnet'?'on':''}" data-m="sonnet">sonnet · careful</span>
         </div>
-        <button class="go" id="runBtn">${ICO.play}<span>Run on the bench</span></button>
+        <button class="go" id="runBtn">${ICO.play}<span>${esc(AL.button)}</span></button>
       </div>
     </div>
     <div class="suggest">
@@ -710,7 +724,7 @@ function samplesView(){
       time:j.started,files:['metadata.json','commands.jsonl','trajectory.h5','llm_session.jsonl']})).reverse();
   if(!rows.length) return `<div class="empty"><div class="e-card">
       <h3>No runs yet</h3><p>When you run something on the bench, it's saved here with its plates, tubes and full trajectory.</p>
-      <button class="go" onclick="go('ask')">${ICO.play}<span>Ask the bench</span></button></div></div>`;
+      <button class="go" onclick="go('ask')">${ICO.play}<span>${esc(askLabels().title)}</span></button></div></div>`;
   const COL={ok:'var(--ok)',success:'var(--ok)',error:'var(--err)',failed:'var(--err)'};
   return `<div class="samples">${rows.map(r=>`
     <div class="s-row">

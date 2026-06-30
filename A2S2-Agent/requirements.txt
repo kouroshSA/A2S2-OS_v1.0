@@ -1,0 +1,13 @@
+# A2S2-Agent dependencies. Install into a dedicated conda env:
+#   conda create -n a2s2agent python=3.11 -y
+#   conda activate a2s2agent
+#   pip install -r requirements.txt
+#
+# The agent loop + provider-agnostic model layer.
+langgraph
+langchain
+langchain-anthropic     # provider: Claude (default; needs ANTHROPIC_API_KEY)
+langchain-ollama        # provider: local models via Ollama
+langchain-openai        # provider: any OpenAI-compatible endpoint (vLLM, LM Studio, ...)
+requests                # thin client for the A2S2-OS HTTP API
+mcp                     # MCP server: expose the OS tools to Claude Desktop/Code & other clients

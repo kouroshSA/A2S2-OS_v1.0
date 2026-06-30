@@ -1,0 +1,15 @@
+{
+  "_comment": "Register the A2S2-OS MCP server with an MCP client (Claude Desktop, Claude Code, etc.). For Claude Desktop, merge this into claude_desktop_config.json. The server runs in the a2s2agent conda env and needs no API key of its own (the client supplies the model); it talks to a running A2S2-OS at A2S2_OS_URL (default http://localhost:8770). Edit the absolute path to mcp_server.py for your machine.",
+  "mcpServers": {
+    "a2s2-os": {
+      "command": "conda",
+      "args": [
+        "run", "-n", "a2s2agent", "python",
+        "/home/ksa/Models/A2S2-OS_v1.0/A2S2-Agent/mcp_server.py"
+      ],
+      "env": {
+        "A2S2_OS_URL": "http://localhost:8770"
+      }
+    }
+  }
+}

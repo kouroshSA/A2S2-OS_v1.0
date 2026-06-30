@@ -244,7 +244,7 @@ cross-platform and would serve it unchanged.
 | GET | `/api/modes` | active app's modes of operation (descriptors) |
 | GET | `/api/library` | active app's curated protocol list |
 | GET | `/api/sessions` | active app's saved runs, newest first (cap 80) |
-| POST | `/api/run` | `{mode, task, params}` → `{job_id}` (legacy `{task, model}` still accepted → task mode) |
+| POST | `/api/run` | `{mode, task, params}` → `{job_id}` (legacy `{task, model}` still accepted → task mode). Optional `app` targets a specific app for this run **without** changing the active app; absent → the active app. |
 | POST | `/api/active` | `{app}` → health payload; switches the active app |
 | GET | `/api/job/<id>` | `{status, log[], outcome, mode, arm, rail, session_dir}` |
 | POST | `/api/job/<id>/stop` | stop a running job (the long-running modes, e.g. VR) |

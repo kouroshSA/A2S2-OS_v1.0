@@ -423,7 +423,18 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(n) or b"{}")
             except Exception:
                 return self._send(400, {"error": "bad json"})
-            app = active_app()
+            # Optional `app` targets a specific app for THIS run without
+            # changing the global active app (so an agent can dispatch into
+            # another app without flipping what the shell is showing). Absent ->
+            # the active app, as before.
+            req_app = (body.get("app") or "").strip()
+            if req_app:
+                app = APPS.get(req_app)
+                if not app:
+                    return self._send(400, {"error": "unknown app", "app": req_app,
+                                            "apps": [a.id for a in APPS.values()]})
+            else:
+                app = active_app()
             if not app:
                 return self._send(409, {"error": "no app installed"})
             mode = (body.get("mode") or "task").strip()
