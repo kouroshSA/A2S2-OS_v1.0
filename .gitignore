@@ -3,3 +3,4 @@ __pycache__/
 *:com.dropbox.attrs
 *:Zone.Identifier
 config.json
+workspace/

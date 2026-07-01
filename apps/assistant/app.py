@@ -115,6 +115,49 @@ def build_cmd(mode, task, params):
     return [_agent_python()] + argv[1:], str(AGENT_DIR), env
 
 
+def _brain_provider_model(p):
+    brain = p.get("brain") or p.get("model") or DEFAULT_BRAIN
+    if brain not in BRAINS:
+        brain = DEFAULT_BRAIN
+    return BRAINS[brain]
+
+
+def chat_cmd(params):
+    """(argv, cwd, env) for a PERSISTENT chat session (chat_server.py).
+
+    Unlike build_cmd (a fresh one-shot per message), this launches one long-lived
+    agent the OS keeps warm for a whole conversation and streams over stdio. The
+    OS wraps argv in `conda run -n a2s2agent` because argv[0] is a bare `python`.
+
+    Params (all optional): brain (haiku/sonnet/...), intent (preview|run) which
+    sets whether the agent may dispatch bench hardware autonomously, session (the
+    rolling memory key), memory ("new" wipes it first). File/code tools are always
+    available in chat — only bench-hardware dispatch is gated by intent.
+    """
+    p = params or {}
+    provider, model = _brain_provider_model(p)
+    intent = p.get("intent", "preview")
+    # preview: confirm gate ON (hardware runs are previewed, need a yes).
+    # run:     confirm gate OFF (agent may dispatch bench modes itself).
+    confirm = "1" if intent != "run" else "0"
+    session = (p.get("session") or "console").strip() or "console"
+
+    argv = ["python", "chat_server.py"]
+    env = {
+        **os.environ,
+        "A2S2_AGENT_PROVIDER": provider,
+        "A2S2_AGENT_MODEL": model,
+        "A2S2_AGENT_CONFIRM": confirm,
+        # File/code tools stay available regardless of intent (this is a
+        # workbench, not just a dispatcher) — only run_mode obeys confirm.
+        "A2S2_AGENT_READ_ONLY": "0",
+        "A2S2_AGENT_SESSION": session,
+        "A2S2_AGENT_RESET": "1" if p.get("memory") == "new" else "0",
+        "A2S2_OS_URL": os.environ.get("A2S2_OS_URL", "http://localhost:8770"),
+    }
+    return [_agent_python()] + argv[1:], str(AGENT_DIR), env
+
+
 def health():
     """Ready if the agent can run at all: either a Claude key is available (for
     the default anthropic brain) or a local Ollama server is reachable."""
@@ -153,6 +196,9 @@ MANIFEST = {
     "tagline": "Run things by asking in plain words",
     "conda_env": "a2s2agent",
     "models": list(BRAINS),
+    # Signals the shell to render a live multi-turn chat (SSE) for this app
+    # instead of the one-shot Ask→Watch job flow.
+    "chat": True,
     "vocabulary": "Speaks plain lab language; maps requests to OS apps/modes.",
     # Per-app wording for the shell's single-task ("Ask") surface. The shell
     # falls back to its bench defaults when an app omits these.

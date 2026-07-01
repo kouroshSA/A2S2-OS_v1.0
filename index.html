@@ -136,6 +136,48 @@
     border-radius:999px;padding:9px 15px;cursor:pointer}
   .sug:hover{border-color:var(--line-2)}
 
+  /* ai chat */
+  .chat-body{padding:14px 22px;overflow:hidden;display:flex}
+  .chat{display:flex;flex-direction:column;height:100%;width:100%;max-width:880px;margin:0 auto}
+  .chat-head{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:0 2px 12px;border-bottom:1px solid var(--line);margin-bottom:6px}
+  .chat-head .grp{display:flex;align-items:center;gap:6px}
+  .chat-head .glabel{font-family:"IBM Plex Mono";font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2)}
+  .chat-head .spacer{flex:1}
+  .chat-new{font-family:"IBM Plex Mono";font-size:12px;color:var(--muted);border:1px solid var(--line);
+    background:var(--panel);border-radius:999px;padding:6px 13px;cursor:pointer}
+  .chat-new:hover{border-color:var(--line-2);color:var(--text)}
+  .chat-thread{flex:1;overflow:auto;display:flex;flex-direction:column;gap:15px;padding:14px 2px}
+  .msg{display:flex;flex-direction:column;gap:5px;max-width:90%}
+  .msg.user{align-self:flex-end;align-items:flex-end}
+  .msg.agent{align-self:flex-start;align-items:stretch;max-width:94%}
+  .msg .who{font-family:"IBM Plex Mono";font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2);padding:0 3px}
+  .bubble{border-radius:14px;padding:11px 15px;font-size:15px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+  .msg.user .bubble{background:var(--go);color:var(--go-ink)}
+  .msg.agent .bubble{background:var(--panel);border:1px solid var(--line);color:var(--text)}
+  .bubble code{font-family:"IBM Plex Mono";font-size:13px;background:var(--bench-2);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+  .bubble strong{font-weight:650}
+  .bubble pre{background:var(--bench-2);border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin:8px 0;overflow:auto}
+  .bubble pre code{border:none;background:none;padding:0;font-size:12.5px;line-height:1.5;color:#c9d6d1;white-space:pre}
+  .tools{display:flex;flex-direction:column;gap:5px;width:100%;margin-bottom:2px}
+  .tool{font-family:"IBM Plex Mono";font-size:12px;border:1px solid var(--line);background:var(--bench-2);border-radius:9px;overflow:hidden}
+  .tool summary{cursor:pointer;padding:7px 11px;color:var(--muted);display:flex;align-items:center;gap:8px;list-style:none;white-space:nowrap;overflow:hidden}
+  .tool summary::-webkit-details-marker{display:none}
+  .tool .tname{color:var(--blue);flex-shrink:0}
+  .tool .targs{color:var(--muted-2);overflow:hidden;text-overflow:ellipsis}
+  .tool .tspin{color:var(--go);margin-left:auto;flex-shrink:0}
+  .tool .tdone{color:var(--ok);margin-left:auto;flex-shrink:0}
+  .tool pre{margin:0;padding:9px 11px;border-top:1px solid var(--line);background:var(--bench);color:#a9b8b2;
+    font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto}
+  .cursor-blink{display:inline-block;width:7px;height:15px;background:var(--go);margin-left:2px;
+    vertical-align:text-bottom;animation:blink 1s steps(2) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .chat-empty{color:var(--muted);font-size:14.5px;text-align:center;margin:auto;max-width:48ch;line-height:1.65}
+  .chat-input{display:flex;gap:10px;align-items:flex-end;border:1px solid var(--line);border-radius:14px;
+    background:var(--panel);padding:11px 12px;margin-top:10px}
+  .chat-input textarea{flex:1;background:transparent;border:none;outline:none;color:var(--text);
+    font-family:"Inter";font-size:16px;line-height:1.5;resize:none;max-height:160px;min-height:26px}
+  .chat-input textarea::placeholder{color:var(--muted-2)}
+
   /* protocol library */
   .lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;max-width:980px;margin:0 auto}
   .card{border:1px solid var(--line);border-radius:var(--r);background:var(--panel);padding:18px;cursor:pointer;
@@ -274,6 +316,7 @@ const STATE = {
   jobs:[],              // {id, sid, mode, task, status, log[], outcome, model, started}
   sessions:[],
   busy:false,
+  chat:null,            // {id, es, messages[], cur, params:{brain,intent}, busy, ended, pendingReset}
   arm:'idle', rail:0
 };
 
@@ -467,6 +510,7 @@ function render(){
   if(STATE.view==='ask') wireAsk();
   if(STATE.view==='watch') renderWatch();
   if(STATE.view==='runmode') wireRunMode();
+  if(STATE.view==='chat') wireChat();
 }
 
 function homeView(){
@@ -474,8 +518,9 @@ function homeView(){
   const done = STATE.mode==='live'? STATE.sessions.length : STATE.jobs.filter(j=>j.status==='done').length;
   const galleryModes = STATE.modes.filter(m=>m.gallery);
   const AL = askLabels();
+  const askDest = appIsChat() ? 'chat' : 'ask';
   return `<div class="home">
-    <div class="tile ask" onclick="go('ask')"><div class="accent"></div>
+    <div class="tile ask" onclick="go('${askDest}')"><div class="accent"></div>
       <div class="ico">${ICO.ask}</div>
       <div><h2>${esc(AL.title)}</h2><p>${esc(AL.blurb)}</p></div>
     </div>
@@ -506,6 +551,15 @@ const TITLES={ask:['Ask the bench','say it in plain words'],library:['Run a prot
   modes:['Lab modes','ways to run the bench'],watch:['Watch','live bench &amp; queue'],
   samples:['My samples & results','saved runs']};
 function viewShell(v){
+  if(v==='chat'){
+    return `<div class="view">
+      <div class="view-head">
+        <button class="back" onclick="go('home')" aria-label="Back to home">‹</button>
+        <h2>${esc(askLabels().title)}</h2><span class="sub">live chat · files &amp; code</span>
+      </div>
+      <div class="view-body chat-body" id="vbody">${chatView()}</div>
+    </div>`;
+  }
   if(v==='runmode'){
     const m=currentMode()||{};
     const [t,s]=[esc(m.name||'Run'),esc(m.tagline||'')];
@@ -556,6 +610,179 @@ function wireAsk(){
     const t=document.getElementById('task').value.trim();
     if(t) submit(t);
   };
+}
+
+/* ---- AI CHAT (persistent, streaming) ---- */
+function appManifest(){ return STATE.apps.find(a=>a.id===STATE.appId)||{}; }
+function appIsChat(){ return !!appManifest().chat; }
+function ensureChat(){
+  if(!STATE.chat) STATE.chat={id:null,es:null,messages:[],cur:null,busy:false,ended:false,
+    pendingReset:false,params:{brain:(appManifest().models||['haiku'])[0]||'haiku',intent:'preview'}};
+  return STATE.chat;
+}
+function truncate(s,n){ s=String(s); return s.length>n?s.slice(0,n)+'…':s; }
+
+function chatView(){
+  const c=ensureChat();
+  const brains=appManifest().models||['haiku','sonnet'];
+  const head=`<div class="chat-head">
+    <div class="grp"><span class="glabel">Brain</span>${brains.map(b=>
+      `<span class="chip cbrain ${b===c.params.brain?'on':''}" data-b="${esc(b)}">${esc(b)}</span>`).join('')}</div>
+    <div class="grp"><span class="glabel">Action</span>
+      <span class="chip cintent ${c.params.intent==='preview'?'on':''}" data-i="preview">preview</span>
+      <span class="chip cintent ${c.params.intent==='run'?'on':''}" data-i="run">run</span></div>
+    <div class="spacer"></div>
+    <button class="chat-new" id="chatNew">＋ New chat</button>
+  </div>`;
+  const thread=`<div class="chat-thread" id="chatThread">${threadHtml()}</div>`;
+  const ph=appManifest().ask_placeholder||'Ask in plain words — or ask it to work on a file…';
+  const input=`<div class="chat-input">
+    <textarea id="chatText" rows="1" placeholder="${esc(ph)}"></textarea>
+    <button class="go" id="chatSend">${ICO.play}<span>Send</span></button>
+  </div>`;
+  return `<div class="chat">${head}${thread}${input}</div>`;
+}
+
+function threadHtml(){
+  const c=ensureChat();
+  if(!c.messages.length) return `<div class="chat-empty">Start a conversation. The agent can plan and run bench modes — and it can work with files and code: e.g. “add an <b>age_next_year</b> column to results.csv” or “sample 10 sequences from proteins.fasta”. It remembers the conversation, so you can follow up.</div>`;
+  return c.messages.map(msgHtml).join('');
+}
+function msgHtml(m){
+  if(m.role==='user') return `<div class="msg user"><div class="bubble">${esc(m.text)}</div></div>`;
+  if(m.role==='error') return `<div class="msg agent"><div class="who">agent</div>
+    <div class="bubble" style="border-color:var(--err);color:var(--err)">${esc(m.text)}</div></div>`;
+  const tools=(m.tools&&m.tools.length)?`<div class="tools">${m.tools.map(toolHtml).join('')}</div>`:'';
+  const cur=m.streaming?'<span class="cursor-blink"></span>':'';
+  const body=m.text?mdToHtml(m.text):(m.streaming?'':'<span style="color:var(--muted-2)">…</span>');
+  return `<div class="msg agent"><div class="who">agent</div>${tools}<div class="bubble">${body}${cur}</div></div>`;
+}
+function toolHtml(t){
+  const st=t.result==null?'<span class="tspin">▶ running…</span>':'<span class="tdone">✓ done</span>';
+  const args=t.args?truncate(JSON.stringify(t.args),90):'';
+  const res=t.result!=null?`<pre>${esc(String(t.result))}</pre>`:'';
+  return `<details class="tool"><summary><span class="tname">${esc(t.name)}</span>
+    <span class="targs">${esc(args)}</span> ${st}</summary>${res}</details>`;
+}
+/* tiny markdown: fenced code, inline code, bold */
+function mdToHtml(s){
+  const parts=String(s).split('```'); let out='';
+  parts.forEach((seg,i)=>{
+    if(i%2===1){ const nl=seg.indexOf('\n'); const code=nl>=0?seg.slice(nl+1):seg;
+      out+=`<pre><code>${esc(code.replace(/\n$/,''))}</code></pre>`; }
+    else{ let h=esc(seg); h=h.replace(/`([^`]+)`/g,'<code>$1</code>');
+      h=h.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>'); out+=h; }
+  });
+  return out;
+}
+
+function paintChat(){
+  const thread=document.getElementById('chatThread'); if(!thread) return;
+  const nearBottom = thread.scrollHeight-thread.scrollTop-thread.clientHeight < 120;
+  thread.innerHTML=threadHtml();
+  if(nearBottom) thread.scrollTop=thread.scrollHeight;
+}
+function setChatSendEnabled(on){
+  const b=document.getElementById('chatSend'); if(b) b.disabled=!on;
+}
+function pushChatError(text){ const c=ensureChat(); c.messages.push({role:'error',text}); paintChat(); }
+
+function closeChatStream(){ const c=ensureChat(); if(c.es){ try{c.es.close();}catch(e){} c.es=null; } }
+
+async function startChatSession(reset){
+  const c=ensureChat();
+  if(c.id){ try{ await api('/api/chat/stop',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({chat_id:c.id})},4000);}catch(e){} }
+  closeChatStream();
+  const params={brain:c.params.brain,intent:c.params.intent,session:'console'};
+  if(reset) params.memory='new';
+  let res;
+  try{
+    res=await api('/api/chat/start',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({app:STATE.appId,params})},8000);
+  }catch(e){ pushChatError('Could not start the agent. Is the server running and the agent ready (API key set)?'); return null; }
+  c.id=res.chat_id; c.ended=false; c.cur=null;
+  openChatStream(c.id);
+  return c.id;
+}
+function openChatStream(id){
+  const c=ensureChat();
+  const es=new EventSource('/api/chat/stream?chat_id='+encodeURIComponent(id));
+  c.es=es;
+  es.onmessage=ev=>{ let d; try{ d=JSON.parse(ev.data); }catch(e){ return; } onChatEvent(d); };
+  es.onerror=()=>{ if(c.ended){ closeChatStream(); } };  // else let the browser retry
+}
+function onChatEvent(d){
+  const c=ensureChat();
+  switch(d.type){
+    case 'turn_start': c.cur={role:'agent',text:'',tools:[],streaming:true}; c.messages.push(c.cur); paintChat(); break;
+    case 'token':
+      if(!c.cur){ c.cur={role:'agent',text:'',tools:[],streaming:true}; c.messages.push(c.cur); }
+      c.cur.text+=d.text; paintChat(); break;
+    case 'tool_start':
+      if(c.cur){ c.cur.tools.push({name:d.name,args:d.args,result:null}); paintChat(); } break;
+    case 'tool_end':
+      if(c.cur){ const pend=c.cur.tools.filter(x=>x.name===d.name&&x.result==null);
+        if(pend.length) pend[pend.length-1].result=d.result;
+        else c.cur.tools.push({name:d.name,args:null,result:d.result}); paintChat(); } break;
+    case 'final':
+      if(c.cur){ if(d.text) c.cur.text=d.text; c.cur.streaming=false; c.cur=null; }
+      c.busy=false; setChatSendEnabled(true); paintChat(); break;
+    case 'error':
+      if(c.cur) c.cur.streaming=false;
+      pushChatError(d.text||'agent error'); c.busy=false; setChatSendEnabled(true); break;
+    case 'closed':
+      c.ended=true; closeChatStream(); c.busy=false; setChatSendEnabled(true); break;
+  }
+}
+async function sendChat(){
+  const c=ensureChat();
+  const ta=document.getElementById('chatText'); if(!ta) return;
+  const text=ta.value.trim(); if(!text||c.busy) return;
+  ta.value=''; ta.style.height='auto';
+  c.messages.push({role:'user',text}); paintChat();
+  c.busy=true; setChatSendEnabled(false);
+  if(!c.id||c.ended){
+    const id=await startChatSession(c.pendingReset); c.pendingReset=false;
+    if(!id){ c.busy=false; setChatSendEnabled(true); return; }
+  }
+  try{
+    await api('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({chat_id:c.id,text})},8000);
+  }catch(e){ pushChatError('Message not delivered — the agent may have stopped. Try “New chat”.');
+    c.busy=false; setChatSendEnabled(true); }
+}
+async function newChat(){
+  const c=ensureChat();
+  if(c.id){ try{ await api('/api/chat/stop',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({chat_id:c.id})},4000);}catch(e){} }
+  closeChatStream();
+  c.id=null; c.ended=false; c.cur=null; c.messages=[]; c.busy=false; c.pendingReset=true;
+  render();
+}
+async function changeChatSetting(k,v){
+  const c=ensureChat();
+  if(c.params[k]===v) return;
+  c.params[k]=v;
+  // Settings are baked into the agent process at launch. If one is live, swap it
+  // WITHOUT wiping memory (session replays), so the visible conversation survives.
+  if(c.id && !c.ended){ await startChatSession(false); }
+  render();
+}
+function wireChat(){
+  const c=ensureChat();
+  document.querySelectorAll('.cbrain').forEach(el=>el.onclick=()=>changeChatSetting('brain',el.dataset.b));
+  document.querySelectorAll('.cintent').forEach(el=>el.onclick=()=>changeChatSetting('intent',el.dataset.i));
+  const nb=document.getElementById('chatNew'); if(nb) nb.onclick=()=>newChat();
+  const ta=document.getElementById('chatText');
+  if(ta){
+    ta.focus();
+    ta.oninput=()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,160)+'px'; };
+    ta.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendChat(); } };
+  }
+  const sb=document.getElementById('chatSend'); if(sb) sb.onclick=()=>sendChat();
+  setChatSendEnabled(!c.busy);
+  paintChat();
 }
 
 /* ---- LIBRARY ---- */

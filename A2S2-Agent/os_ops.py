@@ -135,7 +135,25 @@ def run_mode(mode_id: str, task="", params_json="{}", app_id: str = "",
     try:
         res = _os.run(mode_id, task, params, app=(target_app if hit else None))
     except Exception as e:
-        return f"Dispatch failed: {e}\n{preview}"
+        # Surface the OS's own error body (e.g. 409 "app not ready" with a health
+        # dict) instead of an opaque "HTTPError: 409 Conflict" — otherwise a weak
+        # model may mis-paraphrase it (e.g. as "already in use").
+        detail = str(e)
+        resp = getattr(e, "response", None)
+        if resp is not None:
+            try:
+                j = resp.json()
+                if j.get("error") == "app not ready":
+                    h = j.get("health", {}) or {}
+                    miss = [k[:-6] for k, v in h.items() if k.endswith("_found") and not v]
+                    detail = ("app '%s' is not ready" % target_app) + (
+                        f" (missing: {', '.join(miss)})" if miss else ""
+                    ) + " — its model checkpoint or data files may not be installed."
+                elif j.get("error"):
+                    detail = j["error"]
+            except Exception:
+                pass
+        return f"Could not dispatch: {detail}\n{preview}"
     job_id = res.get("job_id")
     return (f"Dispatched. job_id={job_id}. Use job_status('{job_id}') to follow "
             f"progress.\n{preview}")

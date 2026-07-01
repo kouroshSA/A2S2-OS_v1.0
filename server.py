@@ -35,18 +35,26 @@ Kiosk (boot-to-console):
 import importlib.util
 import json
 import os
+import queue
 import shutil
 import signal
 import subprocess
 import threading
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 # ---------------------------------------------------------------- config
 HERE = Path(__file__).resolve().parent
 APPS_DIR = HERE / "apps"
 PORT = int(os.environ.get("A2S2_OS_PORT", os.environ.get("LAB_OS_PORT", "8770")))
+# Tell children that call back into us where WE actually are. The AI agent's
+# run_mode dispatches to A2S2_OS_URL; without this it would fall back to a
+# hardcoded default port and hit the wrong server (or none) when we bind a
+# non-default port. An explicit A2S2_OS_URL in the environment still wins.
+os.environ.setdefault("A2S2_OS_URL", f"http://localhost:{PORT}")
 # Which app the shell drives. Defaults to the first installed app; with one
 # app that is the Bench Console.
 DEFAULT_APP = os.environ.get("A2S2_OS_APP", "bench_console")
@@ -163,6 +171,24 @@ class App:
         else:
             model = (params or {}).get("model", "haiku")
             out = self.mod.task_cmd(task, model)
+        if isinstance(out, tuple):
+            argv = list(out[0])
+            cwd = out[1] if len(out) > 1 else None
+            env = out[2] if len(out) > 2 else None
+        else:
+            argv, cwd, env = list(out), None, None
+        return wrap_for_env(argv, self.conda_env), cwd, env
+
+    def chat_cmd(self, params):
+        """Return (argv, cwd, env) for a persistent chat session, or None if this
+        app has no chat mode. argv is wrapped with `conda run -n <env>` like
+        build_cmd, so the long-lived agent runs in the app's own env."""
+        fn = getattr(self.mod, "chat_cmd", None)
+        if not fn:
+            return None
+        out = fn(params or {})
+        if not out:
+            return None
         if isinstance(out, tuple):
             argv = list(out[0])
             cwd = out[1] if len(out) > 1 else None
@@ -345,6 +371,135 @@ def stop_job(job_id):
     return True
 
 
+# ---------------------------------------------------------------- chat sessions
+# A chat is a long-lived agent subprocess (see A2S2-Agent/chat_server.py) the OS
+# keeps warm for a whole conversation. Its stdout is a stream of JSON events; a
+# reader thread parses them into a per-chat queue that the SSE endpoint drains to
+# the browser. User turns are written to the child's stdin. This is separate from
+# the job store: jobs are one-shot runs, a chat persists across many turns.
+CHATS = {}          # chat_id -> dict(proc, q, app_id, alive, sse, idle_since)
+CHATS_LOCK = threading.Lock()
+CHAT_REAP_GRACE_S = 60      # stop a chat with no SSE client attached this long
+
+
+def _chat_reader(chat_id, proc):
+    """Pump the agent's stdout JSONL into the chat's event queue."""
+    q = CHATS[chat_id]["q"]
+    for raw in iter(proc.stdout.readline, ""):
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue                       # ignore any non-JSON chatter
+        q.put(ev)
+    try:
+        proc.stdout.close()
+    except OSError:
+        pass
+    with CHATS_LOCK:
+        c = CHATS.get(chat_id)
+        if c:
+            c["alive"] = False
+    q.put({"type": "closed"})
+
+
+def _drain(stream):
+    """Consume a pipe we don't forward (child stderr) so it can't fill and block."""
+    try:
+        for _ in iter(stream.readline, ""):
+            pass
+    except (OSError, ValueError):
+        pass
+
+
+def start_chat(app, params):
+    """Spawn a persistent chat agent for `app`. Returns chat_id, or None if the
+    app has no chat mode / failed to start."""
+    try:
+        cmd = app.chat_cmd(params)
+    except Exception:
+        return None
+    if not cmd:
+        return None
+    argv, cwd, env = cmd
+    try:
+        proc = subprocess.Popen(
+            argv, cwd=cwd, env=env,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, bufsize=1,
+            start_new_session=True,        # own group so stop can signal the tree
+        )
+    except (FileNotFoundError, OSError):
+        return None
+    chat_id = uuid.uuid4().hex[:12]
+    with CHATS_LOCK:
+        CHATS[chat_id] = {"proc": proc, "q": queue.Queue(),
+                          "app_id": app.id, "alive": True,
+                          "sse": 0, "idle_since": time.monotonic()}
+    threading.Thread(target=_chat_reader, args=(chat_id, proc), daemon=True).start()
+    threading.Thread(target=_drain, args=(proc.stderr,), daemon=True).start()
+    return chat_id
+
+
+def chat_send(chat_id, text):
+    """Deliver a user turn to a live chat. Returns True if accepted."""
+    with CHATS_LOCK:
+        c = CHATS.get(chat_id)
+    if not c or not c.get("alive"):
+        return False
+    proc = c["proc"]
+    try:
+        proc.stdin.write(json.dumps({"type": "user", "text": text}) + "\n")
+        proc.stdin.flush()
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def stop_chat(chat_id):
+    """End a chat and terminate its agent. Idempotent."""
+    with CHATS_LOCK:
+        c = CHATS.pop(chat_id, None)
+    if not c:
+        return False
+    proc = c["proc"]
+    try:
+        proc.stdin.write(json.dumps({"type": "stop"}) + "\n")
+        proc.stdin.flush()
+    except (OSError, ValueError):
+        pass
+    if proc.poll() is None:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+    return True
+
+
+def _reap_chats():
+    """Kiosk hygiene: a persistent chat lives as long as a browser is attached
+    via SSE. When a client goes away (tab closed, reload) without calling
+    /api/chat/stop, its agent would otherwise linger. This stops any chat that
+    has had no SSE client for CHAT_REAP_GRACE_S (EventSource reconnects within
+    seconds, so a real gap means the client is gone)."""
+    while True:
+        time.sleep(15)
+        now = time.monotonic()
+        dead = []
+        with CHATS_LOCK:
+            for cid, c in CHATS.items():
+                idle = c.get("idle_since")
+                if c.get("sse", 0) <= 0 and idle and (now - idle) > CHAT_REAP_GRACE_S:
+                    dead.append(cid)
+        for cid in dead:
+            stop_chat(cid)
+
+
 # ---------------------------------------------------------------- composed responses
 def health_payload():
     app = active_app()
@@ -372,6 +527,50 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):  # quiet
         pass
 
+    def _sse_chat(self, chat_id):
+        """Stream a chat's events to the browser as Server-Sent Events. Stays
+        open for the whole conversation (idle between turns); ends when the agent
+        process exits ('closed') or the client disconnects."""
+        with CHATS_LOCK:
+            c = CHATS.get(chat_id)
+            if c:
+                c["sse"] = c.get("sse", 0) + 1
+                c["idle_since"] = None
+        if not c:
+            return self._send(404, {"error": "no such chat"})
+        q = c["q"]
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")   # don't let proxies buffer
+        self.end_headers()
+        try:
+            while True:
+                try:
+                    ev = q.get(timeout=15)
+                except queue.Empty:
+                    with CHATS_LOCK:
+                        still = CHATS.get(chat_id)
+                    if not still or not still.get("alive"):
+                        break                 # dead chat: don't hang forever
+                    self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+                    continue
+                self.wfile.write(f"data: {json.dumps(ev)}\n\n".encode())
+                self.wfile.flush()
+                if ev.get("type") == "closed":
+                    break
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass                              # client went away
+        finally:
+            with CHATS_LOCK:
+                cc = CHATS.get(chat_id)
+                if cc:
+                    cc["sse"] = max(0, cc.get("sse", 1) - 1)
+                    if cc["sse"] == 0:
+                        cc["idle_since"] = time.monotonic()
+
     def do_GET(self):
         p = self.path.split("?")[0]
         if p in ("/", "/index.html"):
@@ -390,6 +589,10 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/sessions":
             app = active_app()
             return self._send(200, app.list_sessions() if app else [])
+        if p == "/api/chat/stream":
+            qs = parse_qs(urlparse(self.path).query)
+            cid = (qs.get("chat_id", [""])[0]).strip()
+            return self._sse_chat(cid)
         if p.startswith("/api/job/"):
             jid = p.rsplit("/", 1)[-1]
             with JOBS_LOCK:
@@ -453,6 +656,47 @@ class Handler(BaseHTTPRequestHandler):
             if not h.get("ready", True):
                 return self._send(409, {"error": "app not ready", "health": h})
             return self._send(200, {"job_id": start_job(mode, task, params, app)})
+        if p == "/api/chat/start":
+            n = int(self.headers.get("Content-Length", "0") or 0)
+            try:
+                body = json.loads(self.rfile.read(n) or b"{}")
+            except Exception:
+                return self._send(400, {"error": "bad json"})
+            req_app = (body.get("app") or "").strip()
+            app = APPS.get(req_app) if req_app else active_app()
+            if not app:
+                return self._send(400, {"error": "unknown app", "app": req_app,
+                                        "apps": [a.id for a in APPS.values()]})
+            h = app.health()
+            if not h.get("ready", True):
+                return self._send(409, {"error": "app not ready", "health": h})
+            chat_id = start_chat(app, dict(body.get("params") or {}))
+            if not chat_id:
+                return self._send(400, {"error": "app has no chat mode", "app": app.id})
+            return self._send(200, {"chat_id": chat_id, "app": app.id})
+        if p == "/api/chat/send":
+            n = int(self.headers.get("Content-Length", "0") or 0)
+            try:
+                body = json.loads(self.rfile.read(n) or b"{}")
+            except Exception:
+                return self._send(400, {"error": "bad json"})
+            cid = (body.get("chat_id") or "").strip()
+            text = (body.get("text") or "").strip()
+            if not cid or not text:
+                return self._send(400, {"error": "chat_id and text required"})
+            if chat_send(cid, text):
+                return self._send(200, {"ok": True})
+            return self._send(404, {"error": "no such chat or it has ended"})
+        if p == "/api/chat/stop":
+            n = int(self.headers.get("Content-Length", "0") or 0)
+            try:
+                body = json.loads(self.rfile.read(n) or b"{}")
+            except Exception:
+                return self._send(400, {"error": "bad json"})
+            cid = (body.get("chat_id") or "").strip()
+            if stop_chat(cid):
+                return self._send(200, {"stopped": cid})
+            return self._send(404, {"error": "no such chat"})
         if p.startswith("/api/job/") and p.endswith("/stop"):
             jid = p[len("/api/job/"):-len("/stop")]
             if stop_job(jid):
@@ -489,6 +733,7 @@ def main():
         if "api_key_present" in h:
             print(f"  api key     : {'present' if h['api_key_present'] else 'not set'}")
     print(f"\n  open http://localhost:{PORT}\n")
+    threading.Thread(target=_reap_chats, daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 
 
