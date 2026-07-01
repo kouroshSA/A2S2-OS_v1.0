@@ -31,16 +31,35 @@ set, so that is what this is built on.
                      • knowledge:  list_runnables, describe_mode, search_knowledge  ← kg.json
                      • live read:  os_health, list_sessions, job_status             ← A2S2-OS API
                      • run (gated): run_mode  (confirm=false preview / true dispatch) ← POST /api/run
+                     • files:       read_file, list_dir, write_file, edit_file       ← fileops.py
+                     • code:        run_python, run_shell (any conda env)            ← execops.py
                                             │
                                             ▼
         A2S2-OS bridge (server.py) ──► app job runner ──► twin scripts / other apps
 ```
 
-- **No bash, no filesystem, no arbitrary HTTP.** The agent can only do what the
-  tools above allow.
-- **`run_mode` is the only world-changing tool.** It will not dispatch unless
-  called with `confirm=true`; otherwise it returns a preview to show the user.
-  The kiosk policy `A2S2_AGENT_CONFIRM` (default on) enforces this.
+- **`run_mode` is the only *hardware*-changing tool.** It will not dispatch
+  unless called with `confirm=true`; otherwise it returns a preview to show the
+  user. The kiosk policy `A2S2_AGENT_CONFIRM` (default on) enforces this.
+- **File & code tools do real data work** — read/write files and run Python or
+  shell in any conda env (default: the agent's own; name another for pandas,
+  biopython, torch, …). Relative paths resolve under a workspace
+  (`A2S2_AGENT_WORKSPACE`, default `<OS root>/workspace`); absolute paths are
+  allowed. There is **no sandbox yet** — code runs with the user's privileges;
+  a path jail / container is deferred. These tools load only when the agent is
+  not read-only (i.e. not in the assistant's `preview`-without-run posture).
+
+## Two ways to run: one-shot vs. persistent chat
+
+- **One-shot** (`cli.py`, `os_ops.run_mode`): a fresh process per message. Simple
+  and stateless; conversation continuity comes from `memory.py` replaying a saved
+  session. This is what the classic Ask→Watch job flow uses.
+- **Persistent chat** (`chat_server.py`): one long-lived agent the OS keeps warm
+  for a whole conversation, streaming events over stdio (tokens, tool calls, tool
+  results, final). The OS (`server.py`) spawns one per chat session, pipes user
+  turns in, and relays events to the browser as **Server-Sent Events**
+  (`GET /api/chat/stream`). This backs the in-UI live chat window. Idle chats
+  (no SSE client attached) are reaped automatically.
 
 ## Knowledge graph (auto-seeded)
 

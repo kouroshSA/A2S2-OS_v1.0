@@ -1,13 +1,19 @@
 """LangChain tools = the agent's action surface.
 
-Thin wrappers over os_ops (the shared implementation). Deliberately narrow:
-knowledge lookups over the KG + read-only live OS calls + ONE gated dispatch
-tool. There is no bash, no filesystem, no arbitrary HTTP — on a kiosk that
-drives a robot the agent can only do what these tools allow.
+Thin wrappers over the shared implementations. Two groups:
 
-`run_mode` is the only tool that changes the world: confirm=False is always
-preview-only, confirm=True dispatches. Whether the agent may self-confirm is set
-by the system prompt (autonomous vs. approval-required).
+  READ_TOOLS  — knowledge lookups over the KG, read-only live OS calls, and
+                read-only filesystem inspection. Safe; always available.
+  RUN_TOOLS   — the things that change the world: dispatch a bench mode
+                (run_mode, gated by confirm), write/edit files, and run
+                Python/shell code. Only loaded when the agent is not read-only.
+
+`run_mode` is the only tool whose confirm gate matters for hardware: confirm=False
+is always preview-only, confirm=True dispatches. Whether the agent may
+self-confirm is set by the system prompt (autonomous vs. approval-required). The
+file/code tools are NOT hardware and are not gated by that policy — on this
+kiosk they let the agent do real data work (edit a CSV, sample a FASTA, ...).
+Safeguards (a sandbox / path jail) are deliberately deferred.
 """
 from __future__ import annotations
 
@@ -15,6 +21,8 @@ from typing import Union
 
 from langchain_core.tools import tool
 
+import execops
+import fileops
 import os_ops
 
 
@@ -83,7 +91,61 @@ def run_mode(mode_id: str, task: Union[str, dict] = "", params_json: Union[str, 
     return os_ops.run_mode(mode_id, task, params_json, app_id, confirm)
 
 
+# --------------------------------------------------------------- filesystem (read)
+@tool
+def read_file(path: str) -> str:
+    """Read a text file and return its contents (truncated if very large).
+    Relative paths resolve under the agent workspace; absolute paths work too.
+    Use before edit_file so you know what you are changing."""
+    return fileops.read_file(path)
+
+
+@tool
+def list_dir(path: str = ".") -> str:
+    """List a directory's entries with sizes. Relative paths resolve under the
+    workspace. Use to find data files before reading or processing them."""
+    return fileops.list_dir(path)
+
+
+# --------------------------------------------------------------- filesystem (write)
+@tool
+def write_file(path: str, content: str) -> str:
+    """Create or overwrite a text file with `content` (parent folders are made).
+    Relative paths resolve under the workspace. Use for new scripts, outputs,
+    or small data files."""
+    return fileops.write_file(path, content)
+
+
+@tool
+def edit_file(path: str, find: str, replace: str, count: int = 0) -> str:
+    """Replace occurrences of the exact text `find` with `replace` in a file.
+    count=0 replaces all; a positive count limits how many. Read the file first
+    so `find` matches exactly."""
+    return fileops.edit_file(path, find, replace, count)
+
+
+# --------------------------------------------------------------- code execution
+@tool
+def run_python(code: str, env: str = "", timeout: int = 120) -> str:
+    """Run a Python snippet and return its stdout+stderr. This is the main way to
+    do data work — e.g. add a column to a CSV, subsample a FASTA, compute stats.
+    Files you write land in the workspace by default. `env` optionally names a
+    conda env to run under (e.g. 'gpt', 'esm', 'xarm6sim', 'base') when you need
+    libraries like pandas, biopython or torch; leave empty for the agent's env."""
+    return execops.run_python(code, env=env, timeout=timeout)
+
+
+@tool
+def run_shell(command: str, env: str = "", cwd: str = "", timeout: int = 120) -> str:
+    """Run a shell command (bash) and return its stdout+stderr. Use for quick
+    file ops (head, wc, grep, cp), package checks, or invoking tools. `env`
+    optionally names a conda env to run under; `cwd` sets the working directory
+    (defaults to the workspace)."""
+    return execops.run_shell(command, env=env, cwd=cwd, timeout=timeout)
+
+
 READ_TOOLS = [list_runnables, describe_mode, search_knowledge,
-              os_health, list_sessions, job_status]
-RUN_TOOLS = [run_mode]
+              os_health, list_sessions, job_status,
+              read_file, list_dir]
+RUN_TOOLS = [run_mode, write_file, edit_file, run_python, run_shell]
 ALL_TOOLS = READ_TOOLS + RUN_TOOLS
