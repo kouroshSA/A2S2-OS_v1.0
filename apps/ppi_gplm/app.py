@@ -382,6 +382,37 @@ def library():
     return LIBRARY
 
 
+# ---------------------------------------------------------------- modes
+# One task mode, declared explicitly so the shell form and the agent's knowledge
+# graph both carry the task-string convention. Without this the OS supplies a
+# generic implicit "task" mode with no hint, and the agent (which reads the KG)
+# has no way to know that "demo"/"demo:N" selects the shipped MED4 sample — it
+# would pass free text that _prep_input treats as one literal inline prompt.
+MODES = [
+    {
+        "id": "task", "name": "Classify protein pairs",
+        "tagline": "Score PPIs with the ppiGPLM language model",
+        "desc": "Runs ppiGPLM once over a set of protein-pair prompts and saves "
+                "the interaction probabilities. The task string can be: "
+                "\"demo\" / \"demo:N\" / \"demo:all\" to use the shipped MED4 "
+                "low-confidence sample (first N pairs; default 5); a path to a "
+                "prompts .csv (relative to the ppiGPLM repo or absolute); or a "
+                "single inline prompt like "
+                "\"<ps1>,SEQA,<ps2>,SEQB,<l1>,lenA,<l2>,lenB,<l3>\".",
+        "needs_task": True, "gallery": False,
+        "task_hint": "e.g. demo:5  ·  demo:all  ·  a prompts .csv path",
+        "params": [
+            {"id": "model", "label": "Model", "type": "choice",
+             "choices": ["ppiGPLM"], "default": "ppiGPLM"},
+        ],
+    },
+]
+
+
+def modes():
+    return MODES
+
+
 # ---------------------------------------------------------------- health
 def health():
     repo_found = PPIGPLM_DIR.is_dir() and (PPIGPLM_DIR / INFER_SCRIPT).is_file()
@@ -422,4 +453,11 @@ MANIFEST = {
     # unavailable.
     "conda_env": "gpt",
     "vocabulary": "molecular biology (proteins, protein pairs, interactions, MED4 interactome, interaction probability)",
+    # Per-app wording for the shell's single-task "Ask" surface.
+    "ask_title": "Classify protein pairs",
+    "ask_blurb": "Score protein-protein interactions with ppiGPLM. Type "
+                 "“demo” (or demo:N / demo:all) for the shipped MED4 sample, "
+                 "give a prompts .csv path, or paste one prompt.",
+    "ask_placeholder": "e.g. demo:5  ·  demo:all  ·  a prompts .csv path",
+    "ask_button": "Run ppiGPLM",
 }
