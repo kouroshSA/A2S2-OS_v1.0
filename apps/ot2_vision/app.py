@@ -232,6 +232,12 @@ def build_cmd(mode, task, params):
     env, brain = _base_env(model)
     out = run_dir / "protocol.py"
 
+    if mode == "run":                   # RealSense + YOLO -> ground -> protocol
+        argv = [py, "-m", "ot2_vision.cli", "run", task, "--no-execute",
+                "--output", str(out)]
+        _write_meta(run_dir, run_id, mode, task, brain, {"output": str(out)})
+        return argv, str(OT2VISION_DIR), env
+
     if mode == "vision":                # live camera -> Claude Vision -> protocol
         argv = [py, "-m", "ot2_vision.cli", "vision-run", task, "--no-execute",
                 "--device", _pint(params, "device", 0), "--output", str(out)]
@@ -284,6 +290,22 @@ MODES = [
              "choices": list(MODELS), "default": DEFAULT_MODEL},
             {"id": "device", "label": "Camera device", "type": "int",
              "default": 0, "min": 0, "max": 15},
+        ],
+    },
+    {
+        "id": "run", "name": "Deck run (RealSense + YOLO)",
+        "tagline": "Live RealSense capture -> YOLO detect -> ground -> protocol",
+        "desc": "The full depth pipeline: capture the deck with the Intel "
+                "RealSense (RGB + aligned depth), detect labware with YOLOv8, "
+                "ground each detection to its deck slot, then generate the "
+                "protocol for your instruction. Generation only — never executes "
+                "on the robot. Needs the RealSense camera, the YOLOv8 weights, "
+                "and a one-time deck calibration (ArUco markers).",
+        "accent": "#E5484D", "gallery": True, "needs_task": True,
+        "task_hint": "e.g. Transfer 50 uL from the plate in slot 5 to column 1",
+        "params": [
+            {"id": "model", "label": "Brain", "type": "choice",
+             "choices": list(MODELS), "default": DEFAULT_MODEL},
         ],
     },
     {
@@ -390,6 +412,9 @@ def health():
     py = _ot2_python()
     py_ok = (py != "python") and Path(py).is_file()
     key_ok = bool(_anthropic_key())
+    # Extra prerequisites for the "run" mode (RealSense + YOLO + calibration).
+    yolo_ok = (OT2VISION_DIR / "models" / "yolov8m.pt").is_file()
+    calib_ok = (OT2VISION_DIR / "calibration" / "camera_to_deck.json").is_file()
     return {
         # demo (the default) needs only the repo, its env, and an Anthropic key.
         "ready": bool(repo_found and py_ok and key_ok),
@@ -406,6 +431,16 @@ def health():
                          "demo/vision modes call the Claude API."),
         "camera_hint": "The vision & analyze modes need a webcam at the machine; "
                        "the demo mode runs with no hardware.",
+        # "run" mode extras (RealSense pipeline):
+        "yolo_weights_found": yolo_ok,
+        "calibration_found": calib_ok,
+        "run_hint": (None if (yolo_ok and calib_ok) else
+                     "The 'run' mode also needs models/yolov8m.pt"
+                     + ("" if yolo_ok else " (missing)")
+                     + " and a deck calibration at calibration/camera_to_deck.json"
+                     + ("" if calib_ok else " (missing — run `ot2-vision calibrate` "
+                        "with 4 ArUco DICT_4X4_50 markers, IDs 0-3, on the deck)")
+                     + "."),
     }
 
 
