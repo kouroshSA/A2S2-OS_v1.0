@@ -454,6 +454,9 @@ MANIFEST = {
                "(no hardware) or from a live camera view of the real deck.",
     "accent": "#4C8DFF",
     "models": list(MODELS),
+    # Has a live camera (RealSense / webcam) — the console shows its MJPEG feed
+    # (served by camera_server.py) in the Watch view.
+    "camera": True,
     # Runs under `conda run -n ot2vision` (anthropic + opencv + the installed
     # package). _ot2_python() is the fallback when conda is unavailable.
     "conda_env": "ot2vision",
