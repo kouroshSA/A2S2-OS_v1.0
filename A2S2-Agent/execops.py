@@ -101,3 +101,52 @@ def run_shell(command: str, env: str = "", cwd: str = "", timeout: int = DEFAULT
     run_cwd = fileops.resolve(cwd) if cwd else ws
     argv = _wrap_env(["bash", "-lc", str(command)], env)
     return _run(argv, run_cwd, int(timeout) if timeout else DEFAULT_TIMEOUT)
+
+
+# ---------------------------------------------------------------- terminal window
+# Emulators tried in order, and how to run a command in one that stays open.
+def _term_argv(term: str, inner: str):
+    table = {
+        "gnome-terminal": ["gnome-terminal", "--", "bash", "-lc", inner],
+        "konsole": ["konsole", "-e", "bash", "-lc", inner],
+        "xfce4-terminal": ["xfce4-terminal", "--command", f"bash -lc {inner!r}"],
+        "mate-terminal": ["mate-terminal", "--", "bash", "-lc", inner],
+        "tilix": ["tilix", "-e", "bash", "-lc", inner],
+        "xterm": ["xterm", "-e", "bash", "-lc", inner],
+    }
+    return table.get(term)
+
+
+def open_terminal(command: str = "", env: str = "", cwd: str = "") -> str:
+    """Open a NEW graphical terminal window that runs `command` (if given) and
+    then stays open at an interactive shell. Unlike run_shell (which captures
+    output headlessly), this hands a live terminal to the person at the machine —
+    for interactive tools, a REPL, tailing logs, etc. Needs a display.
+
+    `env` optionally names a conda env to activate first; `cwd` sets the starting
+    directory (defaults to the workspace).
+    """
+    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        return ("No graphical display (DISPLAY/WAYLAND_DISPLAY unset) — cannot open a "
+                "terminal window. Use run_shell for headless command execution.")
+    run_cwd = fileops.resolve(cwd) if cwd else fileops.workspace_dir()
+    parts = [f"cd {str(run_cwd)!r}"]
+    env = (env or "").strip()
+    if env and CONDA:
+        parts.append(f"source {Path(CONDA).parent.parent / 'etc/profile.d/conda.sh'} 2>/dev/null; conda activate {env}")
+    if command.strip():
+        parts += [f"echo '$ {command}'", command]
+    parts.append("exec bash")   # keep the window open at a shell
+    inner = "; ".join(parts)
+
+    for term in ("gnome-terminal", "konsole", "xfce4-terminal", "mate-terminal", "tilix", "xterm"):
+        if shutil.which(term):
+            try:
+                subprocess.Popen(_term_argv(term, inner), start_new_session=True)
+            except (OSError, ValueError) as e:
+                return f"Found {term} but failed to launch it: {e}"
+            ran = f" running: {command}" if command.strip() else ""
+            in_env = f" (env {env})" if env else ""
+            return f"Opened a {term} window in {run_cwd}{in_env}{ran}."
+    return ("No supported terminal emulator found (tried gnome-terminal, konsole, "
+            "xfce4-terminal, mate-terminal, tilix, xterm).")

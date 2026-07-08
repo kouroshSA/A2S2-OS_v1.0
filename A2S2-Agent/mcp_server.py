@@ -19,6 +19,8 @@ from typing import Union
 
 from mcp.server.fastmcp import FastMCP
 
+import execops
+import fileops
 import os_ops
 
 mcp = FastMCP("a2s2-os")
@@ -65,6 +67,13 @@ def job_status(job_id: str) -> str:
 
 
 @mcp.tool()
+def stop_job(job_id: str) -> str:
+    """Stop a running job by job_id (one started via run_mode, or a long-running
+    mode like VR teleop)."""
+    return os_ops.stop_job(job_id)
+
+
+@mcp.tool()
 def run_mode(mode_id: str, task: Union[str, dict] = "", params_json: Union[str, dict] = "{}",
              app_id: str = "", confirm: Union[bool, str] = False) -> str:
     """Run a mode on the A2S2-OS. SAFETY: can move real hardware. confirm=false
@@ -73,5 +82,62 @@ def run_mode(mode_id: str, task: Union[str, dict] = "", params_json: Union[str, 
     return os_ops.run_mode(mode_id, task, params_json, app_id, confirm)
 
 
+# ---- files & code (same capabilities as the agent's LangChain tools) ----
+@mcp.tool()
+def read_file(path: str) -> str:
+    """Read a text file (relative paths resolve under the agent workspace)."""
+    return fileops.read_file(path)
+
+
+@mcp.tool()
+def list_dir(path: str = ".") -> str:
+    """List a directory's entries with sizes."""
+    return fileops.list_dir(path)
+
+
+@mcp.tool()
+def write_file(path: str, content: str) -> str:
+    """Create or overwrite a text file (parent folders are made)."""
+    return fileops.write_file(path, content)
+
+
+@mcp.tool()
+def edit_file(path: str, find: str, replace: str, count: int = 0) -> str:
+    """Replace exact text `find` with `replace` in a file (count=0 = all)."""
+    return fileops.edit_file(path, find, replace, count)
+
+
+@mcp.tool()
+def run_python(code: str, env: str = "", cwd: str = "", timeout: int = 120) -> str:
+    """Run a Python snippet and return stdout+stderr. `env` optionally names a
+    conda env (gpt/esm/xarm6sim/base) to run under."""
+    return execops.run_python(code, env=env, cwd=cwd, timeout=timeout)
+
+
+@mcp.tool()
+def run_shell(command: str, env: str = "", cwd: str = "", timeout: int = 120) -> str:
+    """Run a shell command (bash) and return stdout+stderr."""
+    return execops.run_shell(command, env=env, cwd=cwd, timeout=timeout)
+
+
+@mcp.tool()
+def open_terminal(command: str = "", env: str = "", cwd: str = "") -> str:
+    """Open a new graphical terminal window (optionally running a command, then
+    staying open at a shell). Needs a display."""
+    return execops.open_terminal(command, env=env, cwd=cwd)
+
+
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    import os
+    import sys
+
+    # Default transport is stdio (what Claude Desktop/Code launch). Pass --http
+    # (or set A2S2_MCP_HTTP=1) to serve over Streamable HTTP instead — useful for
+    # MCP clients that sandbox local processes and can only reach a network URL
+    # (e.g. Claude Science). The endpoint is then http://<host>:<port>/mcp.
+    if "--http" in sys.argv or os.environ.get("A2S2_MCP_HTTP"):
+        mcp.settings.host = os.environ.get("A2S2_MCP_HOST", "127.0.0.1")
+        mcp.settings.port = int(os.environ.get("A2S2_MCP_PORT", "8971"))
+        mcp.run(transport="streamable-http")
+    else:
+        mcp.run(transport="stdio")

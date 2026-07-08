@@ -72,6 +72,25 @@ def job_status(job_id: str) -> str:
     }, indent=2)
 
 
+def stop_job(job_id: str) -> str:
+    """Stop a running job (e.g. one the agent started with run_mode, or a
+    long-running mode like VR). Signals the whole process group via the OS."""
+    job_id = (job_id or "").strip()
+    if not job_id:
+        return "No job_id given."
+    if not _os.reachable():
+        return f"A2S2-OS not reachable at {CONFIG.os_url}."
+    try:
+        _os.stop(job_id)
+    except Exception as e:  # noqa: BLE001
+        return f"Could not stop job {job_id}: {e}"
+    try:
+        j = _os.job(job_id)
+        return f"Stop signal sent to job {job_id}. Status now: {j.get('status')}."
+    except Exception:
+        return f"Stop signal sent to job {job_id}."
+
+
 # --------------------------------------------------------------- coercion
 def coerce_params(params_json) -> tuple[dict, str | None]:
     """Accept a dict, a JSON string, or empty — weak models send any of them."""
