@@ -237,6 +237,9 @@
   /* watch */
   .watch{display:grid;grid-template-columns:1.3fr 1fr;gap:18px;height:100%}
   .watch.watch-solo{grid-template-columns:1fr;max-width:900px;margin:0 auto}
+  .cam-live{position:relative;padding:0!important}
+  .cam-feed{width:100%;height:100%;object-fit:contain;display:block;background:#0a100e}
+  .cam-fallback{position:absolute;inset:0;display:none;place-items:center;text-align:center;color:var(--muted-2);padding:24px}
   .cam{border:1px solid var(--line);border-radius:var(--r);background:
       repeating-linear-gradient(45deg,#0c1311 0 12px,#0a100e 12px 24px);
       display:flex;flex-direction:column;overflow:hidden}
@@ -463,6 +466,10 @@ function hasAgent(){ return !!STATE.agentId; }
 /* An app declares a live physical scene (arm/rail/objects) via manifest.scene.
    Only such apps get the bench status strip and the camera pane in Watch. */
 function hasScene(){ return !!appManifest().scene; }
+/* An app declares a live camera (RealSense/webcam) via manifest.camera. The
+   console then shows a live MJPEG pane (served by camera_server.py on :8771). */
+function hasCamera(){ return !!appManifest().camera; }
+function camStreamUrl(){ return `http://${location.hostname||'localhost'}:8771/stream`; }
 
 function renderAppSwitcher(){
   const sel=document.getElementById('appSel');
@@ -636,12 +643,14 @@ function homeView(){
     </div>`);
   }
 
-  // Watch/Monitor — camera copy only for scene apps.
+  // Watch/Monitor — live camera for scene/camera apps, run log otherwise.
+  const camv = hasCamera();
   tiles.push(`<div class="tile watch" onclick="go('watch')"><div class="accent"></div>
     <span class="badge">${running?running+' running':'idle'}</span>
     <div class="ico">${ICO.watch}</div>
-    <div><h2>${scene?'Watch':'Monitor'}</h2><p>${scene
-      ?'See the live bench camera, what\'s running now, and the queue.'
+    <div><h2>${scene||camv?'Watch':'Monitor'}</h2><p>${
+      scene?'See the live bench camera, what\'s running now, and the queue.'
+      :camv?'See the live camera feed, what\'s running now, and the queue.'
       :'Follow the live run log and the queue as jobs run.'}</p></div>
   </div>`);
 
@@ -660,11 +669,11 @@ function homeView(){
 /* view header titles — scene apps keep bench wording; compute apps get neutral
    wording so the console reads as "just this app". ask/chat use per-app labels. */
 function viewTitle(v){
-  const scene=hasScene();
+  const scene=hasScene(); const cam=hasCamera();
   const T={
     library:[scene?'Run a protocol':'Ready-made runs', scene?'pick a saved task':'pick an example and run it'],
     modes:['Run modes', scene?'ways to run the bench':'ways to run this app'],
-    watch:[scene?'Watch':'Monitor', scene?'live bench &amp; queue':'run log &amp; queue'],
+    watch:[scene||cam?'Watch':'Monitor', scene?'live bench &amp; queue':cam?'live camera &amp; queue':'run log &amp; queue'],
     samples:[scene?'My samples & results':'Runs & results','saved runs'],
   };
   return T[v]||['',''];
@@ -1021,18 +1030,36 @@ function watchView(){ return `<div id="watchMount" style="height:100%"></div>`; 
 function renderWatch(){
   const mount=document.getElementById('watchMount'); if(!mount) return;
   const scene=hasScene();
+  const cameraApp=hasCamera();
+  const showCam = scene || cameraApp;
   const active=STATE.jobs.find(j=>j.status==='running')||STATE.jobs[STATE.jobs.length-1];
   const logHtml = active? active.log.map(fmtLog).join('') :
     `<span class="l-dim">${scene?'Bench idle. Ask the bench to do something, or run a protocol.':'Idle. Start a run and its log will stream here.'}</span>`;
-  // The camera pane is bench-only; compute apps show a full-width run log + queue.
-  const cam=scene?`<div class="cam">
+  // Camera pane: a live MJPEG feed for camera apps (RealSense via camera_server.py),
+  // the labelled placeholder for the bench twin, nothing for other compute apps.
+  let cam='';
+  if(cameraApp){
+    cam=`<div class="cam">
+      <div class="cam-bar"><span class="rec"></span> LIVE CAMERA · RealSense</div>
+      <div class="cam-body cam-live">
+        <img class="cam-feed" src="${camStreamUrl()}" alt="live camera"
+          onerror="this.style.display='none';this.parentElement.querySelector('.cam-fallback').style.display='grid';"/>
+        <div class="cam-fallback"><div>
+          <div class="big">Camera off</div>
+          <div style="font-size:13px;max-width:36ch">The camera stream isn't running, or the camera is in use by a run or another viewer. Start it with <code>camera_server.py</code>.</div>
+        </div></div>
+      </div>
+    </div>`;
+  } else if(scene){
+    cam=`<div class="cam">
       <div class="cam-bar"><span class="rec"></span> BENCH CAMERA ${STATE.mode==='live'?'· live':'· demo'}</div>
       <div class="cam-body"><div>
         <div class="big">${active&&active.status==='running'?'Recording run…':'Camera ready'}</div>
         <div style="font-size:13px;max-width:34ch">The live arm feed plugs in here. Until then, watch the bench layout strip above for arm and rail state.</div>
       </div></div>
-    </div>`:'';
-  mount.innerHTML=`<div class="watch${scene?'':' watch-solo'}">
+    </div>`;
+  }
+  mount.innerHTML=`<div class="watch${showCam?'':' watch-solo'}">
     ${cam}
     <div style="display:flex;flex-direction:column;gap:14px;min-height:0">
       <div class="readout" style="flex:1;min-height:0">

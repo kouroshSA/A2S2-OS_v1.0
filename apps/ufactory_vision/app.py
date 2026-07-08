@@ -247,6 +247,9 @@ MANIFEST = {
                "arm's IP, stop it from Watch.",
     "accent": "#E5484D",
     "models": ["GGCNN"],
+    # Has a live camera (RealSense D435) — the console shows its MJPEG feed
+    # (served by camera_server.py) in the Watch view.
+    "camera": True,
     # Runs under `conda run -n ufactory_vision` (torch + xarm-python-sdk +
     # pyrealsense2). _ufv_python() is the fallback when conda is unavailable.
     "conda_env": "ufactory_vision",
