@@ -31,8 +31,10 @@ set, so that is what this is built on.
                      • knowledge:  list_runnables, describe_mode, search_knowledge  ← kg.json
                      • live read:  os_health, list_sessions, job_status             ← A2S2-OS API
                      • run (gated): run_mode  (confirm=false preview / true dispatch) ← POST /api/run
+                     • job control: stop_job  (cancel a run / end a long-running one) ← POST /api/job/<id>/stop
                      • files:       read_file, list_dir, write_file, edit_file       ← fileops.py
                      • code:        run_python, run_shell (any conda env)            ← execops.py
+                     • terminal:    open_terminal  (a live window at the machine)    ← execops.py
                                             │
                                             ▼
         A2S2-OS bridge (server.py) ──► app job runner ──► twin scripts / other apps
@@ -151,9 +153,11 @@ LangChain tools and the MCP server call one shared implementation (`os_ops.py`),
 so they never drift apart. MCP is model-agnostic — this is the "drive the OS
 from anything" seam.
 
-Tools exposed: `list_runnables`, `describe_mode`, `search_knowledge`,
-`os_health`, `list_sessions`, `job_status`, `run_mode` (same confirm-gate:
-`confirm=false` previews, `confirm=true` dispatches).
+Tools exposed (at parity with the agent's LangChain set): `list_runnables`,
+`describe_mode`, `search_knowledge`, `os_health`, `list_sessions`, `job_status`,
+`stop_job`, `run_mode` (same confirm-gate: `confirm=false` previews,
+`confirm=true` dispatches), `read_file`, `list_dir`, `write_file`, `edit_file`,
+`run_python`, `run_shell`, `open_terminal`.
 
 Run it (stdio transport, what desktop clients launch):
 

@@ -73,6 +73,14 @@ def job_status(job_id: str) -> str:
 
 
 @tool
+def stop_job(job_id: str) -> str:
+    """Stop a running job by its job_id — e.g. one you started with run_mode, or a
+    long-running mode like VR teleop. Use when asked to cancel/stop/abort a run,
+    or to end a long-running job you launched."""
+    return os_ops.stop_job(job_id)
+
+
+@tool
 def run_mode(mode_id: str, task: Union[str, dict] = "", params_json: Union[str, dict] = "{}",
              app_id: str = "", confirm: Union[bool, str] = False) -> str:
     """Run a mode on the A2S2-OS. SAFETY: this can move real hardware. Call
@@ -144,8 +152,19 @@ def run_shell(command: str, env: str = "", cwd: str = "", timeout: int = 120) ->
     return execops.run_shell(command, env=env, cwd=cwd, timeout=timeout)
 
 
+@tool
+def open_terminal(command: str = "", env: str = "", cwd: str = "") -> str:
+    """Open a NEW graphical terminal window at the machine, optionally running
+    `command`, then leaving an interactive shell open. Use when the person should
+    drive something live (a REPL, an interactive tool, tailing a log) rather than
+    getting captured output — that is what run_shell is for. Needs a display.
+    `env` names a conda env to activate; `cwd` sets the starting directory."""
+    return execops.open_terminal(command, env=env, cwd=cwd)
+
+
 READ_TOOLS = [list_runnables, describe_mode, search_knowledge,
               os_health, list_sessions, job_status,
               read_file, list_dir]
-RUN_TOOLS = [run_mode, write_file, edit_file, run_python, run_shell]
+RUN_TOOLS = [run_mode, stop_job, write_file, edit_file, run_python, run_shell,
+             open_terminal]
 ALL_TOOLS = READ_TOOLS + RUN_TOOLS
