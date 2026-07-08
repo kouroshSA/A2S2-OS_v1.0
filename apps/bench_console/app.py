@@ -506,8 +506,8 @@ def health():
 # model chips; `vocabulary` documents the bench-only language contract.
 MANIFEST = {
     "id": "bench_console",
-    "name": "Bench Console",
-    "tagline": "A2S2 Bench Console",
+    "name": "Twin Robot World",
+    "tagline": "xArm6 digital twin — a robot world you drive in plain words",
     "summary": "Drive the xArm6 lab bench in plain words — cubes, bins, tubes, racks.",
     "accent": "#F2B23E",
     "models": ["haiku", "sonnet"],
@@ -517,4 +517,8 @@ MANIFEST = {
     # remains the fallback when conda isn't found.
     "conda_env": "xarm6sim",
     "vocabulary": "bench biology (plates, samples, tubes, cubes, bins, racks, protocols, results)",
+    # This app has a live physical scene (arm + rail + objects). The shell shows
+    # its bench status strip and camera view only for apps that declare a scene;
+    # compute-only apps (ppiGPLM, ppiBTEP) render a clean, scene-free console.
+    "scene": "bench",
 }

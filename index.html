@@ -23,6 +23,7 @@
     --blue:#4C8DFF;
     --go:#F2B23E;         /* the one bold spend: primary action */
     --go-ink:#1A1305;
+    --agent:#7C5CFF;      /* the AI agent's accent (persistent across apps) */
     --ok:#46C26A; --warn:#F2B23E; --err:#E5484D;
     --r:14px;
     font-synthesis:none;
@@ -55,13 +56,30 @@
   .brand h1{font-family:"Space Grotesk";font-size:15px;font-weight:600;letter-spacing:.04em}
   .brand small{display:block;font-size:11px;color:var(--muted);font-weight:500;letter-spacing:.12em;text-transform:uppercase}
   .top-spacer{flex:1}
-  .appsel{font-family:"IBM Plex Mono";font-size:12px;color:var(--text);background:var(--panel);
-    border:1px solid var(--line);border-radius:999px;padding:6px 12px 6px 30px;cursor:pointer;outline:none;
+  /* app selector — the primary "where am I / switch here" control */
+  .app-picker{display:flex;align-items:center;gap:9px;padding:5px 6px 5px 14px;
+    background:var(--panel-2);border:1px solid var(--line-2);border-radius:12px}
+  .app-picker-label{font-family:"IBM Plex Mono";font-size:10px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--muted);white-space:nowrap}
+  .appsel{font-family:"Space Grotesk";font-weight:600;font-size:14px;letter-spacing:.01em;
+    color:var(--text);background:var(--panel);
+    border:1px solid var(--line-2);border-radius:9px;padding:8px 34px 8px 34px;cursor:pointer;outline:none;
     -webkit-appearance:none;appearance:none;
-    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237E938C' stroke-width='2'><rect x='3' y='4' width='18' height='16' rx='2'/><path d='M3 9h18'/></svg>");
-    background-repeat:no-repeat;background-position:10px center}
-  .appsel:hover{border-color:var(--line-2)}
-  .appsel option{background:var(--panel);color:var(--text)}
+    background-image:
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%23E8F0ED' stroke-width='2'><rect x='3' y='3' width='7' height='7' rx='1.5'/><rect x='14' y='3' width='7' height='7' rx='1.5'/><rect x='3' y='14' width='7' height='7' rx='1.5'/><rect x='14' y='14' width='7' height='7' rx='1.5'/></svg>"),
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%237E938C' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+    background-repeat:no-repeat,no-repeat;
+    background-position:11px center,right 11px center}
+  .appsel:hover{border-color:var(--go);background-color:var(--panel-2)}
+  .app-picker:hover{border-color:var(--go)}
+  .appsel option{background:var(--panel);color:var(--text);font-family:"Inter"}
+  /* persistent agent button — reachable from any app */
+  .agentbtn{display:inline-flex;align-items:center;gap:7px;font-family:"Space Grotesk";
+    font-size:13px;font-weight:600;letter-spacing:.01em;color:var(--agent);
+    background:rgba(124,92,255,.10);border:1px solid rgba(124,92,255,.45);
+    border-radius:999px;padding:6px 14px;cursor:pointer;outline:none}
+  .agentbtn:hover{background:rgba(124,92,255,.18);border-color:rgba(124,92,255,.7)}
+  .agentbtn .ab-mark{font-size:14px;line-height:1}
   .conn{display:flex;align-items:center;gap:8px;font-family:"IBM Plex Mono";font-size:12px;
     padding:6px 11px;border:1px solid var(--line);border-radius:999px;color:var(--muted)}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--muted-2)}
@@ -100,6 +118,10 @@
   .tile.modes .accent{background:var(--blue)}
   .tile.watch .accent{background:var(--blue)}
   .tile.samples .accent{background:var(--red)}
+  .tile.agent .accent{background:var(--agent)}
+  .tile.agent{border-color:rgba(124,92,255,.35)}
+  .tile.agent:hover{border-color:rgba(124,92,255,.6)}
+  .tile.agent .ico{border-color:rgba(124,92,255,.5)}
   .tile .badge{position:absolute;top:18px;right:18px;font-family:"IBM Plex Mono";font-size:12px;
     color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:3px 9px}
 
@@ -214,6 +236,7 @@
 
   /* watch */
   .watch{display:grid;grid-template-columns:1.3fr 1fr;gap:18px;height:100%}
+  .watch.watch-solo{grid-template-columns:1fr;max-width:900px;margin:0 auto}
   .cam{border:1px solid var(--line);border-radius:var(--r);background:
       repeating-linear-gradient(45deg,#0c1311 0 12px,#0a100e 12px 24px);
       display:flex;flex-direction:column;overflow:hidden}
@@ -271,17 +294,24 @@
   <div class="topbar">
     <div class="brand" onclick="go('home')">
       <div class="mark"></div>
-      <div><h1>A2S2 Lab OS</h1><small>A2S2 Bench Console</small></div>
+      <div><h1>A2S2 Lab OS</h1><small>Twin Robot World</small></div>
     </div>
-    <select id="appSel" class="appsel" title="Switch app" aria-label="Switch app"
-            onchange="switchApp(this.value)" style="display:none"></select>
+    <div id="appPicker" class="app-picker" style="display:none">
+      <span class="app-picker-label">Choose app</span>
+      <select id="appSel" class="appsel" title="Switch app" aria-label="Switch app"
+              onchange="switchApp(this.value)"></select>
+    </div>
+    <button id="agentBtn" class="agentbtn" onclick="go('chat')" style="display:none"
+            title="Open the AI agent — available in every app">
+      <span class="ab-mark">✦</span><span>Agent</span>
+    </button>
     <div class="top-spacer"></div>
     <div id="conn" class="conn demo"><span class="dot"></span><span id="connText">Demo bench</span></div>
     <div id="clock" class="clock">--:--</div>
   </div>
 
-  <!-- signature: live bench status strip -->
-  <div class="strip">
+  <!-- live bench status strip — only shown for apps that declare a scene -->
+  <div class="strip" id="benchStrip">
     <div class="strip-head">
       <span class="label">Bench layout · live state</span>
       <span class="state">arm <b id="armState">idle</b> · rail <b id="railState">0 mm</b></span>
@@ -310,7 +340,9 @@ const STATE = {
   view:'home',
   model:'haiku',
   apps:[],             // installed app manifests (from /api/health)
-  appId:null,          // active app id
+  appId:null,          // active content app id
+  agentId:null,        // the AI-agent app id (chat:true) — a persistent place,
+                       // reachable from every content app, not in the app menu
   modes:[],            // operating-mode descriptors (from /api/health|modes)
   runMode:null,        // mode id currently open in the runner form
   jobs:[],              // {id, sid, mode, task, status, log[], outcome, model, started}
@@ -381,11 +413,24 @@ async function boot(){
     STATE.mode = h.ready ? 'live' : 'demo';
     STATE._health = h;
     STATE.apps = Array.isArray(h.apps) ? h.apps : [];
-    STATE.appId = h.active_app || (STATE.apps[0] && STATE.apps[0].id) || null;
+    STATE.agentId = (STATE.apps.find(a=>a.chat)||{}).id || null;
+    STATE.appId = h.active_app || (contentApps()[0] && contentApps()[0].id) || null;
     STATE.modes = (Array.isArray(h.modes) && h.modes.length) ? h.modes : FALLBACK_MODES;
   }catch{ STATE.mode='demo'; STATE.modes=FALLBACK_MODES; }
+  // If the server started with the agent as the active app, present a content
+  // app instead — the agent is a persistent place, not a console you land in.
+  if(STATE.appId && STATE.appId===STATE.agentId && contentApps().length){
+    try{
+      const cid=contentApps()[0].id;
+      const h2=await api('/api/active',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({app:cid})},5000);
+      STATE._health=h2; STATE.mode=h2.ready?'live':'demo';
+      STATE.appId=h2.active_app||cid; STATE.apps=Array.isArray(h2.apps)?h2.apps:STATE.apps;
+      STATE.modes=(Array.isArray(h2.modes)&&h2.modes.length)?h2.modes:FALLBACK_MODES;
+    }catch(e){}
+  }
   setConn();
-  renderAppSwitcher(); applyAppIdentity();
+  renderAppSwitcher(); applyAppIdentity(); applySceneChrome();
   try{ const lib = await api('/api/library'); if(Array.isArray(lib)&&lib.length) LIBRARY.splice(0,LIBRARY.length,...lib);}catch{}
   await refreshSessions();
   drawBench();
@@ -397,24 +442,55 @@ async function boot(){
 function setConn(){
   const c = document.getElementById('conn');
   const live = STATE.mode==='live';
+  const scene = hasScene();
   c.className = 'conn '+(live?'live':'demo');
-  document.getElementById('connText').textContent = live ? 'Connected to bench' : 'Demo bench';
-  document.getElementById('demoBanner').style.display = live ? 'none':'block';
+  document.getElementById('connText').textContent =
+    live ? (scene?'Connected to bench':'Connected') : (scene?'Demo bench':'Demo mode');
+  const banner=document.getElementById('demoBanner');
+  banner.style.display = live ? 'none':'block';
+  banner.innerHTML = scene
+    ? 'Demo bench — simulated runs. Start <code>server.py</code> on the lab machine to drive the live digital twin.'
+    : 'Demo mode — this app isn\'t ready to run here (its model or environment is missing). Runs are simulated.';
 }
 
-/* ---------------- app switcher ---------------- */
+/* ---------------- apps, agent, scene ---------------- */
+/* The AI agent is not one of the switchable content apps — it is a persistent
+   place reachable from every app. So it is filtered out of the app menu. */
+function contentApps(){ return STATE.apps.filter(a=>a.id!==STATE.agentId); }
+function appManifest(){ return STATE.apps.find(a=>a.id===STATE.appId)||{}; }
+function agentManifest(){ return STATE.apps.find(a=>a.id===STATE.agentId)||{}; }
+function hasAgent(){ return !!STATE.agentId; }
+/* An app declares a live physical scene (arm/rail/objects) via manifest.scene.
+   Only such apps get the bench status strip and the camera pane in Watch. */
+function hasScene(){ return !!appManifest().scene; }
+
 function renderAppSwitcher(){
-  const sel=document.getElementById('appSel'); if(!sel) return;
-  if(STATE.apps.length<2){ sel.style.display='none'; return; }   // nothing to switch to
-  sel.style.display='';
-  sel.innerHTML=STATE.apps.map(a=>
-    `<option value="${esc(a.id)}"${a.id===STATE.appId?' selected':''}>${esc(a.name||a.id)}</option>`).join('');
+  const sel=document.getElementById('appSel');
+  const wrap=document.getElementById('appPicker');
+  const apps=contentApps();
+  if(sel && wrap){
+    if(apps.length<2){ wrap.style.display='none'; }   // nothing to switch between
+    else{
+      wrap.style.display='';
+      sel.innerHTML=apps.map(a=>
+        `<option value="${esc(a.id)}"${a.id===STATE.appId?' selected':''}>${esc(a.name||a.id)}</option>`).join('');
+    }
+  }
+  const ab=document.getElementById('agentBtn');
+  if(ab){ ab.style.display=hasAgent()?'':'none';
+    const nm=agentManifest().name||'Agent';
+    const lbl=ab.querySelector('span:last-child'); if(lbl) lbl.textContent=nm==='AI agent'?'Agent':nm; }
 }
 function applyAppIdentity(){
   const a=STATE.apps.find(x=>x.id===STATE.appId);
   const small=document.querySelector('.brand small');
   if(a&&small) small.textContent=a.name||a.tagline||'Lab OS';
   if(a) document.title='Lab OS — '+(a.name||a.id);
+}
+/* Show or hide the bench status strip depending on the active app's scene. */
+function applySceneChrome(){
+  const strip=document.getElementById('benchStrip');
+  if(strip) strip.style.display=hasScene()?'':'none';
 }
 // Per-app wording for the single-task "Ask" surface; bench defaults when the
 // active app doesn't override them (manifest ask_* fields).
@@ -436,6 +512,7 @@ async function switchApp(id){
   }catch(e){ renderAppSwitcher(); return; }   // revert <select> on failure
   STATE._health=h; STATE.mode=h.ready?'live':'demo';
   STATE.appId=h.active_app||id; STATE.apps=Array.isArray(h.apps)?h.apps:STATE.apps;
+  STATE.agentId=(STATE.apps.find(a=>a.chat)||{}).id||STATE.agentId;
   STATE.modes=(Array.isArray(h.modes)&&h.modes.length)?h.modes:FALLBACK_MODES;
   STATE.runMode=null;
   // reload the now-active app's library + saved runs; clear this session's jobs
@@ -443,7 +520,7 @@ async function switchApp(id){
   catch{ LIBRARY.splice(0,LIBRARY.length); }
   STATE.jobs=[]; STATE.sessions=[];
   await refreshSessions();
-  setConn(); renderAppSwitcher(); applyAppIdentity();
+  setConn(); renderAppSwitcher(); applyAppIdentity(); applySceneChrome();
   STATE.arm='idle'; STATE.rail=0; drawBench();
   STATE.view='home'; render();
 }
@@ -518,44 +595,86 @@ function homeView(){
   const done = STATE.mode==='live'? STATE.sessions.length : STATE.jobs.filter(j=>j.status==='done').length;
   const galleryModes = STATE.modes.filter(m=>m.gallery);
   const AL = askLabels();
-  const askDest = appIsChat() ? 'chat' : 'ask';
-  return `<div class="home">
-    <div class="tile ask" onclick="go('${askDest}')"><div class="accent"></div>
-      <div class="ico">${ICO.ask}</div>
-      <div><h2>${esc(AL.title)}</h2><p>${esc(AL.blurb)}</p></div>
-    </div>
-    <div class="tile proto" onclick="go('library')"><div class="accent"></div>
+  const scene = hasScene();
+  const tiles = [];
+
+  // The agent — always first, always available, in every app's console.
+  if(hasAgent()){
+    const an = agentManifest().name || 'AI agent';
+    tiles.push(`<div class="tile agent" onclick="go('chat')"><div class="accent"></div>
+      <span class="badge">always on</span>
+      <div class="ico">${ICO.agent}</div>
+      <div><h2>${esc(an)}</h2><p>Chat with the lab agent to get things done in plain words — it can answer questions, work with your files and code, and run any app for you. It's here in every console and remembers the conversation.</p></div>
+    </div>`);
+  }
+
+  // The active app's primary "ask" surface.
+  tiles.push(`<div class="tile ask" onclick="go('ask')"><div class="accent"></div>
+    <div class="ico">${ICO.ask}</div>
+    <div><h2>${esc(AL.title)}</h2><p>${esc(AL.blurb)}</p></div>
+  </div>`);
+
+  // Presets/library — only if the app ships any.
+  if(LIBRARY.length){
+    tiles.push(`<div class="tile proto" onclick="go('library')"><div class="accent"></div>
       <span class="badge">${LIBRARY.length} ready</span>
       <div class="ico">${ICO.proto}</div>
-      <div><h2>Run a protocol</h2><p>Pick a saved task from the library and press go. No typing needed.</p></div>
-    </div>
-    <div class="tile modes" onclick="go('modes')"><div class="accent"></div>
+      <div><h2>${scene?'Run a protocol':'Ready-made runs'}</h2><p>${scene
+        ?'Pick a saved task from the library and press go. No typing needed.'
+        :'Pick a ready-made example and run it — no typing needed.'}</p></div>
+    </div>`);
+  }
+
+  // Run modes — only if the app declares more than the single default task.
+  if(galleryModes.length){
+    tiles.push(`<div class="tile modes" onclick="go('modes')"><div class="accent"></div>
       <span class="badge">${galleryModes.length} mode${galleryModes.length===1?'':'s'}</span>
       <div class="ico">${ICO.modes}</div>
-      <div><h2>Lab modes</h2><p>Beyond one task: self-learning loops, auto-play batches, random-play data runs, task augmentation and VR teleoperation.</p></div>
-    </div>
-    <div class="tile watch" onclick="go('watch')"><div class="accent"></div>
-      <span class="badge">${running?running+' running':'idle'}</span>
-      <div class="ico">${ICO.watch}</div>
-      <div><h2>Watch</h2><p>See the live bench camera, what's running now, and the queue.</p></div>
-    </div>
-    <div class="tile samples" onclick="go('samples')"><div class="accent"></div>
-      <span class="badge">${done} run${done===1?'':'s'}</span>
-      <div class="ico">${ICO.samples}</div>
-      <div><h2>My samples &amp; results</h2><p>Every run is saved with its plates, tubes and trajectory. Browse and replay.</p></div>
-    </div>
-  </div>`;
+      <div><h2>Run modes</h2><p>${scene
+        ?'Ways to run the bench beyond one task: self-learning loops, auto-play batches, random-play data runs, task augmentation and VR teleoperation.'
+        :'Different ways to run this app beyond a single request.'}</p></div>
+    </div>`);
+  }
+
+  // Watch/Monitor — camera copy only for scene apps.
+  tiles.push(`<div class="tile watch" onclick="go('watch')"><div class="accent"></div>
+    <span class="badge">${running?running+' running':'idle'}</span>
+    <div class="ico">${ICO.watch}</div>
+    <div><h2>${scene?'Watch':'Monitor'}</h2><p>${scene
+      ?'See the live bench camera, what\'s running now, and the queue.'
+      :'Follow the live run log and the queue as jobs run.'}</p></div>
+  </div>`);
+
+  // Runs & results.
+  tiles.push(`<div class="tile samples" onclick="go('samples')"><div class="accent"></div>
+    <span class="badge">${done} run${done===1?'':'s'}</span>
+    <div class="ico">${ICO.samples}</div>
+    <div><h2>${scene?'My samples &amp; results':'Runs &amp; results'}</h2><p>${scene
+      ?'Every run is saved with its plates, tubes and trajectory. Browse and replay.'
+      :'Every run is saved with its inputs, outputs and files. Browse past runs.'}</p></div>
+  </div>`);
+
+  return `<div class="home">${tiles.join('')}</div>`;
 }
 
-const TITLES={ask:['Ask the bench','say it in plain words'],library:['Run a protocol','pick a saved task'],
-  modes:['Lab modes','ways to run the bench'],watch:['Watch','live bench &amp; queue'],
-  samples:['My samples & results','saved runs']};
+/* view header titles — scene apps keep bench wording; compute apps get neutral
+   wording so the console reads as "just this app". ask/chat use per-app labels. */
+function viewTitle(v){
+  const scene=hasScene();
+  const T={
+    library:[scene?'Run a protocol':'Ready-made runs', scene?'pick a saved task':'pick an example and run it'],
+    modes:['Run modes', scene?'ways to run the bench':'ways to run this app'],
+    watch:[scene?'Watch':'Monitor', scene?'live bench &amp; queue':'run log &amp; queue'],
+    samples:[scene?'My samples & results':'Runs & results','saved runs'],
+  };
+  return T[v]||['',''];
+}
 function viewShell(v){
   if(v==='chat'){
     return `<div class="view">
       <div class="view-head">
         <button class="back" onclick="go('home')" aria-label="Back to home">‹</button>
-        <h2>${esc(askLabels().title)}</h2><span class="sub">live chat · files &amp; code</span>
+        <h2>${esc(agentManifest().name||'AI agent')}</h2><span class="sub">persistent chat · files &amp; code · runs any app</span>
       </div>
       <div class="view-body chat-body" id="vbody">${chatView()}</div>
     </div>`;
@@ -572,8 +691,7 @@ function viewShell(v){
       <div class="view-body" id="vbody">${runModeView()}</div>
     </div>`;
   }
-  let [t,s]=TITLES[v];
-  if(v==='ask'){ t=esc(askLabels().title); }   // per-app label
+  let [t,s]= v==='ask' ? [esc(askLabels().title),'say it in plain words'] : viewTitle(v);
   return `<div class="view">
     <div class="view-head">
       <button class="back" onclick="go('home')" aria-label="Back to home">‹</button>
@@ -612,19 +730,20 @@ function wireAsk(){
   };
 }
 
-/* ---- AI CHAT (persistent, streaming) ---- */
-function appManifest(){ return STATE.apps.find(a=>a.id===STATE.appId)||{}; }
-function appIsChat(){ return !!appManifest().chat; }
+/* ---- AI AGENT CHAT (persistent, streaming, app-independent) ----
+   The chat always talks to the agent app (manifest chat:true), whichever content
+   app is active — so the conversation is available in every console and persists
+   across app switches. */
 function ensureChat(){
   if(!STATE.chat) STATE.chat={id:null,es:null,messages:[],cur:null,busy:false,ended:false,
-    pendingReset:false,params:{brain:(appManifest().models||['haiku'])[0]||'haiku',intent:'preview'}};
+    pendingReset:false,params:{brain:(agentManifest().models||['haiku'])[0]||'haiku',intent:'preview'}};
   return STATE.chat;
 }
 function truncate(s,n){ s=String(s); return s.length>n?s.slice(0,n)+'…':s; }
 
 function chatView(){
   const c=ensureChat();
-  const brains=appManifest().models||['haiku','sonnet'];
+  const brains=agentManifest().models||['haiku','sonnet'];
   const head=`<div class="chat-head">
     <div class="grp"><span class="glabel">Brain</span>${brains.map(b=>
       `<span class="chip cbrain ${b===c.params.brain?'on':''}" data-b="${esc(b)}">${esc(b)}</span>`).join('')}</div>
@@ -635,7 +754,7 @@ function chatView(){
     <button class="chat-new" id="chatNew">＋ New chat</button>
   </div>`;
   const thread=`<div class="chat-thread" id="chatThread">${threadHtml()}</div>`;
-  const ph=appManifest().ask_placeholder||'Ask in plain words — or ask it to work on a file…';
+  const ph=agentManifest().ask_placeholder||'Ask in plain words — or ask it to work on a file…';
   const input=`<div class="chat-input">
     <textarea id="chatText" rows="1" placeholder="${esc(ph)}"></textarea>
     <button class="go" id="chatSend">${ICO.play}<span>Send</span></button>
@@ -645,7 +764,7 @@ function chatView(){
 
 function threadHtml(){
   const c=ensureChat();
-  if(!c.messages.length) return `<div class="chat-empty">Start a conversation. The agent can plan and run bench modes — and it can work with files and code: e.g. “add an <b>age_next_year</b> column to results.csv” or “sample 10 sequences from proteins.fasta”. It remembers the conversation, so you can follow up.</div>`;
+  if(!c.messages.length) return `<div class="chat-empty">Start a conversation. The agent can find and run any app for you — and it can work with files and code: e.g. “add an <b>age_next_year</b> column to results.csv” or “sample 10 sequences from proteins.fasta”. It remembers the conversation, so you can follow up.</div>`;
   return c.messages.map(msgHtml).join('');
 }
 function msgHtml(m){
@@ -699,7 +818,7 @@ async function startChatSession(reset){
   let res;
   try{
     res=await api('/api/chat/start',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({app:STATE.appId,params})},8000);
+      body:JSON.stringify({app:STATE.agentId,params})},8000);
   }catch(e){ pushChatError('Could not start the agent. Is the server running and the agent ready (API key set)?'); return null; }
   c.id=res.chat_id; c.ended=false; c.cur=null;
   openChatStream(c.id);
@@ -901,17 +1020,20 @@ function collectParams(m){
 function watchView(){ return `<div id="watchMount" style="height:100%"></div>`; }
 function renderWatch(){
   const mount=document.getElementById('watchMount'); if(!mount) return;
+  const scene=hasScene();
   const active=STATE.jobs.find(j=>j.status==='running')||STATE.jobs[STATE.jobs.length-1];
   const logHtml = active? active.log.map(fmtLog).join('') :
-    `<span class="l-dim">Bench idle. Ask the bench to do something, or run a protocol.</span>`;
-  mount.innerHTML=`<div class="watch">
-    <div class="cam">
+    `<span class="l-dim">${scene?'Bench idle. Ask the bench to do something, or run a protocol.':'Idle. Start a run and its log will stream here.'}</span>`;
+  // The camera pane is bench-only; compute apps show a full-width run log + queue.
+  const cam=scene?`<div class="cam">
       <div class="cam-bar"><span class="rec"></span> BENCH CAMERA ${STATE.mode==='live'?'· live':'· demo'}</div>
       <div class="cam-body"><div>
         <div class="big">${active&&active.status==='running'?'Recording run…':'Camera ready'}</div>
         <div style="font-size:13px;max-width:34ch">The live arm feed plugs in here. Until then, watch the bench layout strip above for arm and rail state.</div>
       </div></div>
-    </div>
+    </div>`:'';
+  mount.innerHTML=`<div class="watch${scene?'':' watch-solo'}">
+    ${cam}
     <div style="display:flex;flex-direction:column;gap:14px;min-height:0">
       <div class="readout" style="flex:1;min-height:0">
         <div class="r-bar">
@@ -1099,6 +1221,7 @@ const ICO={
   watch:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4C8DFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>`,
   samples:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#E5484D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v7l-5 8a2 2 0 0 0 1.7 3h12.6a2 2 0 0 0 1.7-3l-5-8V3"/><path d="M7.5 3h9"/></svg>`,
   modes:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4C8DFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3.2"/></svg>`,
+  agent:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7C5CFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.5 8.6 8.6 0 0 1-3.9-.9L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5z"/><path d="M12 8l.9 2.1 2.1.9-2.1.9L12 14l-.9-2.1L9 11l2.1-.9z"/></svg>`,
   play:`<svg width="16" height="16" viewBox="0 0 24 24" fill="#1A1305"><path d="M8 5v14l11-7z"/></svg>`,
   stop:`<svg width="13" height="13" viewBox="0 0 24 24" fill="#E5484D"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`
 };
